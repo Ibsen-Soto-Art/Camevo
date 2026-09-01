@@ -8,12 +8,27 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "demo:fase1": "tsx src/simulation/orchestrator/demo.ts"
+    "lint": "eslint src",
+    "demo:fase1": "tsx src/simulation/orchestrator/demo.ts",
+    "dev:api": "tsx watch src/api/server.ts",
+    "demo:fase2": "tsx src/simulation/orchestrator/demo-fase2.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
     "vitest": "^4.1.11",
     "tsx": "^4.19.2",
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13",
+    "eslint": "^10.0.0",
+    "typescript-eslint": "^8.69.0",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-import-resolver-typescript": "^3.7.0"
   }
 }
