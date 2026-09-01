@@ -16,6 +16,15 @@ export interface SimulationConfig {
   updates: number;
   seed: number;
   tasks?: readonly TaskDefinition[];
+  /** Observador opcional de cada recompensa de tarea otorgada (para pruebas/instrumentación). */
+  onTaskSolved?: (event: TaskSolvedEvent) => void;
+}
+
+export interface TaskSolvedEvent {
+  readonly generation: number;
+  readonly taskId: string;
+  readonly multiplier: number;
+  readonly bonusCycles: number;
 }
 
 export interface GenerationSnapshot {
@@ -47,15 +56,17 @@ function makeTaskHooks(
   organism: OrganismState,
   baseCycles: number,
   tasks: readonly TaskDefinition[],
-  onTaskSolved: () => void,
+  generation: number,
+  onTaskSolved: (event: TaskSolvedEvent) => void,
 ): VmHooks {
   return {
     onOutput(outputValue, recentInputs) {
       const solved = evaluateOutput(outputValue, recentInputs, organism.tasksSolved, tasks);
       for (const task of solved) {
         organism.tasksSolved.add(task.id);
-        organism.cyclesRemaining += Math.round(baseCycles * (task.multiplier - 1));
-        onTaskSolved();
+        const bonusCycles = Math.round(baseCycles * (task.multiplier - 1));
+        organism.cyclesRemaining += bonusCycles;
+        onTaskSolved({ generation, taskId: task.id, multiplier: task.multiplier, bonusCycles });
       }
     },
   };
@@ -86,8 +97,9 @@ export function runSimulation(config: SimulationConfig): SimulationResult {
       if (!organism) continue;
 
       organism.cyclesRemaining = config.baseCyclesPerUpdate;
-      const hooks = makeTaskHooks(organism, config.baseCyclesPerUpdate, tasks, () => {
+      const hooks = makeTaskHooks(organism, config.baseCyclesPerUpdate, tasks, generation, (event) => {
         tasksSolvedThisUpdate += 1;
+        config.onTaskSolved?.(event);
       });
 
       while (organism.cyclesRemaining > 0) {
