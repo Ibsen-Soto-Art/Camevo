@@ -13,6 +13,7 @@ export function seedPopulation(
   ancestorGenomes: readonly Genome[],
   mutationRate: number,
   rng: RandomSource,
+  nextId: () => string,
 ): void {
   if (ancestorGenomes.length === 0) {
     throw new Error("Se requiere al menos un genoma ancestral");
@@ -28,6 +29,6 @@ export function seedPopulation(
       index = Math.floor(rng() * grid.size);
     } while (usedIndices.has(index));
     usedIndices.add(index);
-    grid.cells[index] = createOrganism(genome, { mutationRate });
+    grid.cells[index] = createOrganism(genome, { mutationRate, id: nextId() });
   }
 }

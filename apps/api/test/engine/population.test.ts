@@ -24,7 +24,7 @@ describe("Grid (RF-004: grilla poblacional)", () => {
   it("populationSize cuenta solo celdas ocupadas", () => {
     const grid = new Grid({ width: 2, height: 2 });
     expect(grid.populationSize()).toBe(0);
-    grid.cells[0] = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0 });
+    grid.cells[0] = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0, id: "test-organism" });
     expect(grid.populationSize()).toBe(1);
   });
 });
@@ -34,7 +34,8 @@ describe("seedPopulation (RF-008: multi-ancestro)", () => {
     const grid = new Grid({ width: 4, height: 4 });
     const genomeA = createUniformGenome("replicate", 5);
     const genomeB = createUniformGenome("nop", 5);
-    seedPopulation(grid, [genomeA, genomeB], 0.05, sequenceRng([0.1, 0.1, 0.9]));
+    let idCounter = 0;
+    seedPopulation(grid, [genomeA, genomeB], 0.05, sequenceRng([0.1, 0.1, 0.9]), () => String(idCounter++));
 
     const occupied = grid.occupiedIndices();
     expect(occupied).toHaveLength(2);
@@ -46,7 +47,8 @@ describe("seedPopulation (RF-008: multi-ancestro)", () => {
   it("lanza si hay más ancestros que celdas", () => {
     const grid = new Grid({ width: 1, height: 1 });
     const genome = createUniformGenome("nop", 1);
-    expect(() => seedPopulation(grid, [genome, genome], 0.05, sequenceRng([0]))).toThrow();
+    let idCounter = 0;
+    expect(() => seedPopulation(grid, [genome, genome], 0.05, sequenceRng([0]), () => String(idCounter++))).toThrow();
   });
 });
 
@@ -60,7 +62,7 @@ describe("chooseBirthTargetIndex (RF-009 + RF-004)", () => {
   it("modo near-parent: prefiere una celda vecina vacía", () => {
     const grid = new Grid({ width: 3, height: 3 });
     const parentIndex = 4; // centro
-    grid.cells[parentIndex] = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0 });
+    grid.cells[parentIndex] = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0, id: "test-organism" });
 
     const target = chooseBirthTargetIndex(grid, parentIndex, "near-parent", sequenceRng([0]));
     expect(grid.neighborIndices(parentIndex)).toContain(target);
@@ -70,11 +72,11 @@ describe("chooseBirthTargetIndex (RF-009 + RF-004)", () => {
   it("modo near-parent: si todos los vecinos están ocupados, reemplaza al más débil", () => {
     const grid = new Grid({ width: 3, height: 3 });
     const parentIndex = 4;
-    grid.cells[parentIndex] = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0 });
+    grid.cells[parentIndex] = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0, id: "test-organism" });
 
     const neighbors = grid.neighborIndices(parentIndex);
     for (const [i, neighborIndex] of neighbors.entries()) {
-      const organism = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0 });
+      const organism = createOrganism(createUniformGenome("nop", 1), { mutationRate: 0, id: `neighbor-${i}` });
       organism.offspringProduced = i; // el índice 0 queda como el "más débil" (menor descendencia)
       grid.cells[neighborIndex] = organism;
     }

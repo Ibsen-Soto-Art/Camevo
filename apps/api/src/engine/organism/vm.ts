@@ -2,6 +2,8 @@ import { Instruction, Register } from "./instruction-set";
 import { Genome, RandomSource, copyStep } from "./genome";
 
 export interface OrganismState {
+  /** Identificador estable dentro de una corrida (para snapshots livianos: sin genoma). */
+  readonly id: string;
   genome: Genome;
   readonly registers: Record<Register, number>;
   ip: number;
@@ -18,6 +20,7 @@ export interface OrganismState {
 
 export interface CreateOrganismOptions {
   mutationRate: number;
+  id: string;
 }
 
 export function createOrganism(genome: Genome, options: CreateOrganismOptions): OrganismState {
@@ -25,6 +28,7 @@ export function createOrganism(genome: Genome, options: CreateOrganismOptions): 
     throw new Error("No se puede crear un organismo con genoma vacío");
   }
   return {
+    id: options.id,
     genome,
     registers: { A: 0, B: 0, C: 0 },
     ip: 0,
