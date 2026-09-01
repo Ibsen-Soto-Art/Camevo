@@ -1,0 +1,19 @@
+{
+  "name": "@camevo/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Motor de evolución digital y backend de Camevo",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "demo:fase1": "tsx src/simulation/orchestrator/demo.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "tsx": "^4.19.2",
+    "@types/node": "^22.10.2"
+  }
+}
