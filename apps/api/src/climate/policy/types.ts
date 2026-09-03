@@ -1,3 +1,7 @@
+import type { ResourceSupply } from "@camevo/shared-types";
+
+export type { ResourceSupply };
+
 export interface ResourceBounds {
   readonly taskId: string;
   readonly minMultiplier: number;
@@ -11,11 +15,6 @@ export interface ClimatePolicyConfig {
   readonly trendPeriodGenerations: number;
   /** Fracción del rango [minMultiplier, maxMultiplier] que puede añadir/quitar el ruido. */
   readonly varianceAmplitude: number;
-}
-
-export interface ResourceSupply {
-  readonly taskId: string;
-  readonly rewardMultiplier: number;
 }
 
 export interface ClimateParameters {

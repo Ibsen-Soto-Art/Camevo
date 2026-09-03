@@ -1,34 +1,19 @@
+import type { CreateRunRequest, LiveMessage } from "@camevo/shared-types";
+
+export type { GenerationSnapshot, LiveMessage, ResourceSupply } from "@camevo/shared-types";
+
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
-export interface ResourceSupply {
-  readonly taskId: string;
-  readonly rewardMultiplier: number;
-}
-
-export interface GenerationSnapshot {
-  readonly generation: number;
-  readonly populationSize: number;
-  readonly births: number;
-  readonly averageFitness: number;
-  readonly tasksSolvedThisUpdate: number;
-  readonly climate: readonly ResourceSupply[];
-}
-
-export type LiveMessage =
-  | { readonly type: "snapshot"; readonly snapshot: GenerationSnapshot }
-  | { readonly type: "done" }
-  | { readonly type: "error"; readonly message: string };
-
-export interface RunFormValues {
-  readonly gridWidth: number;
-  readonly gridHeight: number;
-  readonly mutationRate: number;
-  readonly updates: number;
-  readonly placementMode: "near-parent" | "random";
-  readonly reproducibilityMode: "reproducible" | "experimental";
-  readonly climateEnabled: boolean;
-}
+/**
+ * Subconjunto de CreateRunRequest que expone el formulario mínimo de esta
+ * fase — derivado del contrato compartido (no repetido a mano) para que
+ * un campo renombrado en shared-types se note aquí en tiempo de
+ * compilación, no en tiempo de ejecución contra la API real.
+ */
+export type RunFormValues = Required<
+  Pick<CreateRunRequest, "gridWidth" | "gridHeight" | "mutationRate" | "updates" | "placementMode" | "reproducibilityMode" | "climateEnabled">
+>;
 
 export async function createRun(values: RunFormValues): Promise<{ runId: string }> {
   const res = await fetch(`${API_BASE}/runs`, {

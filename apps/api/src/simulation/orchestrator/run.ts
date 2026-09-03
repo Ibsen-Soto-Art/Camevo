@@ -1,5 +1,6 @@
+import type { GenerationSnapshot, OrganismSummary } from "@camevo/shared-types";
 import { getClimateParameters } from "../../climate/policy";
-import { ClimatePolicyConfig, ResourceSupply } from "../../climate/policy/types";
+import { ClimatePolicyConfig } from "../../climate/policy/types";
 import { Genome, RandomSource } from "../../engine/organism/genome";
 import { OrganismState, VmHooks, createOrganism, harvestOffspring, step } from "../../engine/organism/vm";
 import { Grid } from "../../engine/population/grid";
@@ -39,24 +40,7 @@ export interface TaskSolvedEvent {
   readonly bonusCycles: number;
 }
 
-/** Snapshot liviano por organismo: sin genoma (docs/03-arquitectura.md §4.1). */
-export interface OrganismSummary {
-  readonly id: string;
-  readonly x: number;
-  readonly y: number;
-  readonly fitness: number;
-}
-
-export interface GenerationSnapshot {
-  generation: number;
-  populationSize: number;
-  births: number;
-  /** Tasa de reemplazo generacional de la población: nacimientos / tamaño de población. */
-  averageFitness: number;
-  tasksSolvedThisUpdate: number;
-  climate: readonly ResourceSupply[];
-  organisms: readonly OrganismSummary[];
-}
+export type { GenerationSnapshot, OrganismSummary };
 
 export interface SimulationResult {
   seed: number;

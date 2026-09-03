@@ -1,7 +1,8 @@
+import type { PlacementMode } from "@camevo/shared-types";
 import { RandomSource } from "../organism/genome";
 import { Grid } from "./grid";
 
-export type PlacementMode = "near-parent" | "random";
+export type { PlacementMode };
 
 function pickWeakestIndex(grid: Grid, indices: readonly number[], rng: RandomSource): number {
   let weakestScore = Number.POSITIVE_INFINITY;

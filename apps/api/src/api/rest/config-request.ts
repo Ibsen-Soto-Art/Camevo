@@ -1,3 +1,4 @@
+import type { CreateRunRequest } from "@camevo/shared-types";
 import { ClimatePolicyConfig } from "../../climate/policy/types";
 import { createUniformGenome } from "../../engine/organism/genome";
 import { PlacementMode } from "../../engine/population/placement";
@@ -5,18 +6,14 @@ import { DEFAULT_TASKS } from "../../engine/tasks/task-registry";
 import { ReproducibilityMode, resolveSeed } from "../../simulation/orchestrator/rng";
 import { SimulationConfig } from "../../simulation/orchestrator/run";
 
-export interface CreateRunRequestBody {
-  gridWidth?: unknown;
-  gridHeight?: unknown;
-  baseCyclesPerUpdate?: unknown;
-  mutationRate?: unknown;
-  updates?: unknown;
-  placementMode?: unknown;
-  ancestorGenomeLength?: unknown;
-  numAncestors?: unknown;
-  reproducibilityMode?: unknown;
-  climateEnabled?: unknown;
-}
+/**
+ * El body de POST /runs es JSON sin tipar hasta que `validationErrors`
+ * lo confirma: cada campo se trata como `unknown` a propósito. Derivar
+ * las claves de `CreateRunRequest` (shared-types) en vez de repetirlas
+ * asegura que esta validación nunca quede desalineada en los NOMBRES de
+ * campo del contrato real que espera apps/web.
+ */
+export type CreateRunRequestBody = { [K in keyof CreateRunRequest]?: unknown };
 
 interface NumericLimit {
   readonly field: keyof CreateRunRequestBody;

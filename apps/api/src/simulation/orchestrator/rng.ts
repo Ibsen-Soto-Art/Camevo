@@ -1,4 +1,7 @@
+import type { ReproducibilityMode } from "@camevo/shared-types";
 import { RandomSource } from "../../engine/organism/genome";
+
+export type { ReproducibilityMode };
 
 /** PRNG determinista (mulberry32): misma semilla → misma secuencia siempre. */
 export function mulberry32(seed: number): RandomSource {
@@ -10,8 +13,6 @@ export function mulberry32(seed: number): RandomSource {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-export type ReproducibilityMode = "reproducible" | "experimental";
 
 function fnv1a(input: string): number {
   let hash = 0x811c9dc5;

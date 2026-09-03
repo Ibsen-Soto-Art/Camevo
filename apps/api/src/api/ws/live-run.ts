@@ -1,15 +1,13 @@
+import type { LiveMessage } from "@camevo/shared-types";
 import type { WebSocket } from "ws";
 import { RunRepository } from "../../persistence/repository/types";
-import { GenerationSnapshot, SimulationConfig, advanceGeneration, createSimulationState } from "../../simulation/orchestrator/run";
+import { SimulationConfig, advanceGeneration, createSimulationState } from "../../simulation/orchestrator/run";
+
+export type { LiveMessage };
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-export type LiveMessage =
-  | { readonly type: "snapshot"; readonly snapshot: GenerationSnapshot }
-  | { readonly type: "done" }
-  | { readonly type: "error"; readonly message: string };
 
 /**
  * Avanza una corrida generación a generación, con una pausa entre cada
