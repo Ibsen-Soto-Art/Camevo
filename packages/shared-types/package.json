@@ -1,0 +1,19 @@
+{
+  "name": "@camevo/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contratos de datos que cruzan la frontera backend↔frontend (docs/05-estructura-repositorio.md)",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

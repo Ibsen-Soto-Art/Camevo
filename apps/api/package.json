@@ -10,10 +10,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "demo:fase1": "tsx src/simulation/orchestrator/demo.ts",
-    "dev:api": "tsx watch src/api/server.ts",
-    "demo:fase2": "tsx src/simulation/orchestrator/demo-fase2.ts"
+    "dev:api": "tsx watch src/api/main.ts"
   },
   "dependencies": {
+    "@camevo/shared-types": "*",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.13.1",
