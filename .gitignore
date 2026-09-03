@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 *.log
+
+# Artefacto de diagnóstico del entorno, no del proyecto (ver .claude_probe_test.txt)
+.claude_probe_test.txt
