@@ -20,6 +20,13 @@ function sleep(ms: number): Promise<void> {
  * múltiples espectadores compartiendo una corrida en curso) — coherente
  * con el supuesto de bajo volumen de usuarios concurrentes de
  * 02-requisitos.md §4.
+ *
+ * Fase 4: si la población se extingue (`snapshot.extinct`), el loop
+ * corta ahí mismo — igual que `runSimulation` — en vez de seguir
+ * transmitiendo generaciones vacías hasta `config.updates`. El socket
+ * cierra igual con el mensaje "done" normal: la razón del corte ya es
+ * explícita en el último snapshot recibido (`extinct: true`), no hace
+ * falta un tipo de mensaje aparte.
  */
 export async function streamRunLive(
   runId: string,
@@ -43,6 +50,8 @@ export async function streamRunLive(
       const message: LiveMessage = { type: "snapshot", snapshot };
       socket.send(JSON.stringify(message));
     }
+
+    if (snapshot.extinct) break;
 
     await sleep(msPerGeneration);
   }

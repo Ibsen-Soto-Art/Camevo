@@ -53,11 +53,34 @@ describe("buildSimulationConfig", () => {
     expect(config.seed).toBe(persisted.seed);
   });
 
-  it("sin climateEnabled, no arma ningún ClimatePolicyConfig", () => {
+  it("sin climateEnabled, no arma ningún ClimatePolicyConfig ni CatastropheConfig (Fase 4)", () => {
     const persisted = samplePersistedConfig({ climateEnabled: false });
     const config = buildSimulationConfig(persisted);
 
     expect(config.climate).toBeUndefined();
+    expect(config.catastrophe).toBeUndefined();
+  });
+
+  it("con climateEnabled, la frecuencia/severidad de catástrofes y el piso del pool escalan con climateChangeSpeed (RF-014/RF-015)", () => {
+    const slow = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "slow", updates: 1000 }));
+    const fast = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "fast", updates: 1000 }));
+
+    // "Rápida" implica catástrofes más frecuentes (intervalo menor) y más severas.
+    expect(fast.catastrophe?.intervalGenerations).toBeLessThan(slow.catastrophe?.intervalGenerations as number);
+    expect(fast.catastrophe?.severity).toBeGreaterThan(slow.catastrophe?.severity as number);
+
+    // "Rápida" implica un piso de escasez de CPU más bajo (más severo).
+    expect(fast.climate?.resourcePool?.minMultiplier).toBeLessThan(slow.climate?.resourcePool?.minMultiplier as number);
+    expect(fast.climate?.resourcePool?.maxMultiplier).toBe(1);
+    expect(slow.climate?.resourcePool?.maxMultiplier).toBe(1);
+  });
+
+  it("quasiExtinction siempre está presente, con o sin clima activo", () => {
+    const withClimate = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true }));
+    const withoutClimate = buildSimulationConfig(samplePersistedConfig({ climateEnabled: false }));
+
+    expect(withClimate.quasiExtinction).toEqual({ thresholdFraction: 0.1, sustainedGenerations: 20 });
+    expect(withoutClimate.quasiExtinction).toEqual({ thresholdFraction: 0.1, sustainedGenerations: 20 });
   });
 
   it("con climateEnabled, siempre incluye un ancestro que ya resuelve NOT (ver createNotSolvingGenome)", () => {

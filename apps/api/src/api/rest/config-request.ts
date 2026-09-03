@@ -4,7 +4,7 @@ import { Genome, createNotSolvingGenome, createUniformGenome } from "../../engin
 import { PlacementMode } from "../../engine/population/placement";
 import { DEFAULT_TASKS } from "../../engine/tasks/task-registry";
 import { ReproducibilityMode, resolveSeed } from "../../simulation/orchestrator/rng";
-import { SimulationConfig } from "../../simulation/orchestrator/run";
+import { CatastropheConfig, QuasiExtinctionConfig, SimulationConfig } from "../../simulation/orchestrator/run";
 
 /**
  * El body de POST /runs es JSON sin tipar hasta que `validationErrors`
@@ -198,6 +198,47 @@ function climateChangeSpeedToPeriod(speed: ClimateChangeSpeed, updates: number):
  */
 const CLIMATE_MAX_MULTIPLIER = 16;
 
+/**
+ * RF-014: el piso de escasez del pool de CPU global escala con la misma
+ * velocidad climática que ya existe (RF-012) — un clima que cambia rápido
+ * también es más severo en cuánto puede llegar a reducir los recursos
+ * disponibles, no una perilla independiente sin relación (decisión de
+ * diseño explícita de la Fase 4). El techo siempre es 1.0: RF-014 es
+ * "reducción", nunca otorga más que la línea base.
+ */
+const RESOURCE_POOL_MIN_MULTIPLIER: Record<ClimateChangeSpeed, number> = {
+  slow: 0.7,
+  moderate: 0.4,
+  fast: 0.15,
+};
+
+/**
+ * RF-015: frecuencia y severidad de los eventos catastróficos, atadas a
+ * la MISMA velocidad climática (mismo razonamiento que el pool de
+ * arriba, y que `CLIMATE_CHANGE_SPEED_RATIOS`: fiel a la definición de
+ * cambio climático del proyecto — tendencia + varianza, donde más
+ * eventos extremos es parte del mismo fenómeno, no uno aparte). El
+ * intervalo es una razón sobre `updates`, igual que el período
+ * climático: "lenta" ⇒ ~1 evento en toda la corrida, "rápida" ⇒ ~20.
+ * Punto de partida a validar empíricamente (ver el reporte de cierre de
+ * la Fase 4 para los números reales de la verificación).
+ */
+const CATASTROPHE_INTERVAL_RATIOS: Record<ClimateChangeSpeed, number> = {
+  slow: 1,
+  moderate: 0.2,
+  fast: 0.05,
+};
+
+const CATASTROPHE_SEVERITY: Record<ClimateChangeSpeed, number> = {
+  slow: 0.05,
+  moderate: 0.15,
+  fast: 0.3,
+};
+
+/** Criterio secundario de colapso (deuda de extinción): constantes fijas, no expuestas como control de usuario todavía. */
+const QUASI_EXTINCTION_THRESHOLD_FRACTION = 0.1;
+const QUASI_EXTINCTION_SUSTAINED_GENERATIONS = 20;
+
 function buildClimateConfig(persisted: PersistedRunConfig): ClimatePolicyConfig {
   return {
     seed: persisted.seed,
@@ -208,7 +249,19 @@ function buildClimateConfig(persisted: PersistedRunConfig): ClimatePolicyConfig 
       minMultiplier: 1,
       maxMultiplier: CLIMATE_MAX_MULTIPLIER,
     })),
+    resourcePool: { minMultiplier: RESOURCE_POOL_MIN_MULTIPLIER[persisted.climateChangeSpeed], maxMultiplier: 1 },
   };
+}
+
+function buildCatastropheConfig(persisted: PersistedRunConfig): CatastropheConfig {
+  return {
+    intervalGenerations: Math.max(1, Math.round(persisted.updates * CATASTROPHE_INTERVAL_RATIOS[persisted.climateChangeSpeed])),
+    severity: CATASTROPHE_SEVERITY[persisted.climateChangeSpeed],
+  };
+}
+
+function buildQuasiExtinctionConfig(): QuasiExtinctionConfig {
+  return { thresholdFraction: QUASI_EXTINCTION_THRESHOLD_FRACTION, sustainedGenerations: QUASI_EXTINCTION_SUSTAINED_GENERATIONS };
 }
 
 /**
@@ -256,6 +309,9 @@ export function buildSimulationConfig(persisted: PersistedRunConfig): Simulation
     placementMode: persisted.placementMode,
     updates: persisted.updates,
     seed: persisted.seed,
-    ...(persisted.climateEnabled ? { climate: buildClimateConfig(persisted) } : {}),
+    quasiExtinction: buildQuasiExtinctionConfig(),
+    ...(persisted.climateEnabled
+      ? { climate: buildClimateConfig(persisted), catastrophe: buildCatastropheConfig(persisted) }
+      : {}),
   };
 }
