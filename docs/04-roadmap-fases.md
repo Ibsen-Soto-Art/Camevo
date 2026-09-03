@@ -1,6 +1,6 @@
 # CAMEVO — Roadmap por Fases
 
-**Versión 1.1 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.2 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un proyecto de aprendizaje construido de forma incremental. Cada fase tiene entregables verificables antes de avanzar a la siguiente.
 
@@ -37,6 +37,11 @@ El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un
 
 **Criterio de salida de fase:** el fitness promedio de la población mejora consistentemente entre corridas repetidas con distinta semilla, sin que el código "decida" quién sobrevive.
 
+**Estado: ✅ Cerrada.**
+- RFs cubiertos: RF-001 a RF-009.
+- Criterio de salida verificado empíricamente en 5 semillas (`test/simulation/fitness-trend.test.ts`): el fitness promedio del último cuarto de cada corrida supera al del primero.
+- Verificado además, por separado, que el camino "mutación → resuelve tarea → recompensa de CPU" (RF-006) se activa de forma independiente del acortamiento de genoma (`test/engine/tasks-reward.test.ts`) — dos caminos evolutivos viables, no solo uno.
+
 ---
 
 ### Fase 2 — Módulo climático mínimo + visualización básica
@@ -51,6 +56,10 @@ El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un
 - Persistir configuración y resultados básicos de cada corrida (RF-030).
 
 **Entregable:** demo end-to-end funcional — el usuario configura una corrida, la ve evolucionar en tiempo real, y observa cómo el fitness reacciona a los cambios en las recompensas de tareas.
+
+**Estado: ✅ Cerrada.**
+- RFs cubiertos: RF-010, RF-011, RF-019 (parcial — ver nota de implementación en `02-requisitos.md`), RF-030, RF-020, RF-022, `api/rest`, `api/ws`.
+- Deuda técnica dejada pendiente al cierre (resuelta como paso previo a la Fase 3): `packages/shared-types` todavía no existía como paquete real (`apps/api` y `apps/web` duplicaban tipos a mano); `apps/web` no tenía ningún test automatizado, lo que permitió que un bug de CORS y una dependencia faltante (`react-is`) solo se atraparan probando a mano en el navegador.
 
 ---
 
@@ -67,6 +76,12 @@ El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un
 **Entregable:** el proyecto ya cumple su propósito de divulgación central — un usuario sin conocimientos técnicos puede mover el control de "velocidad de cambio climático" y ver con sus propios ojos la diferencia entre adaptación y extinción.
 
 **Este es el hito que valida la tesis completa del proyecto.**
+
+**Estado: ✅ Cerrada.**
+- RFs cubiertos: RF-012, RF-013, RF-021, RF-025 (parcial — corridas nuevas en paralelo; sin comparar corridas históricas ya guardadas), RF-026.
+- Hallazgo relevante: con los multiplicadores de `climate/policy` heredados de la Fase 2 (techo 4×-8×), el efecto de la velocidad climática resultó estadísticamente invisible — el bono de CPU por tarea resuelta era ~0.05%-0.1% del total de ciclos que la población consume replicándose, sin importar el período configurado. Corregido subiendo el techo a 16 (el nivel "muy difícil" que ya define RF-006) y sembrando un ancestro pre-adaptado (RF-008) junto al ancestro `replicate` puro de siempre.
+- Aclaración importante de lo que el demo prueba: al sembrar un ancestro ya adaptado, la Fase 3 demuestra selección sobre variación genética *en pie* (standing genetic variation), no una mutación nueva apareciendo en tiempo real bajo presión climática — ver `01-vision-general.md` §9.
+- Deuda técnica pendiente: RF-025 no compara corridas históricas ya guardadas; no existe mecanismo de colapso poblacional real (solo estancamiento de fitness) — eso es RF-014/RF-015 de la Fase 4.
 
 ---
 

@@ -6,6 +6,26 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.9.1] — Notas de cierre de Fase 1/2/3 en el roadmap
+
+**Documentos afectados:** `04-roadmap-fases.md` (v1.1 → v1.2)
+
+### Added
+- Sección "Fase 1": nota de cierre con RFs cubiertos y verificación empírica (dos caminos
+  evolutivos: acortamiento de genoma y resolución de tarea).
+- Sección "Fase 2": nota de cierre con RFs cubiertos y la deuda técnica que quedó pendiente
+  (`packages/shared-types` sin crear, `apps/web` sin tests).
+- Sección "Fase 3": nota de cierre con RFs cubiertos, el hallazgo del multiplicador
+  climático estadísticamente invisible y su corrección, la aclaración de variación
+  genética en pie, y la deuda técnica pendiente (RF-025 sin comparar corridas históricas,
+  sin colapso poblacional real).
+
+**Motivo:** ninguna de las tres fases tenía una nota de cierre en el roadmap — quedaban
+como si todavía estuvieran en curso. Se agregan las tres juntas, con el mismo formato,
+para que la Fase 3 no introdujera un formato sin precedente en el propio documento.
+
+---
+
 ## [v0.9.0] — Cierre de Fase 3: velocidad climática, diversidad y comparación
 
 **Documentos afectados:** ninguno directamente — la Fase 3 implementó control de velocidad
