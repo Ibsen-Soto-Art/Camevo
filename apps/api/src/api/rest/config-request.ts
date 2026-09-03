@@ -199,41 +199,33 @@ function climateChangeSpeedToPeriod(speed: ClimateChangeSpeed, updates: number):
 const CLIMATE_MAX_MULTIPLIER = 16;
 
 /**
- * RF-014: el piso de escasez del pool de CPU global escala con la misma
- * velocidad climática que ya existe (RF-012) — un clima que cambia rápido
- * también es más severo en cuánto puede llegar a reducir los recursos
- * disponibles, no una perilla independiente sin relación (decisión de
- * diseño explícita de la Fase 4). El techo siempre es 1.0: RF-014 es
- * "reducción", nunca otorga más que la línea base.
+ * RF-014/RF-015 solo se activan en velocidad "fast" — decisión tomada
+ * tras medir el efecto en las tres velocidades: aplicar incluso una
+ * escasez de pool suave a "slow"/"moderate" alteraba de forma
+ * significativa el fitness tardío/temprano que la Fase 3 ya había
+ * validado y cerrado (v0.9.0/v0.9.1) — "slow" pasaba de ≈1.25 (sube) a
+ * ≈1.0 (plano), y "moderate" de ≈1.02 (estable) a ≈3-4.6 (sube mucho,
+ * un efecto lateral no buscado). En vez de forzar una recalibración de
+ * "slow"/"moderate" solo para acomodar RF-014, se las deja EXACTAMENTE
+ * como la Fase 3 las validó, y los mecanismos nuevos de la Fase 4 son
+ * exclusivos de "fast" — la única velocidad que de verdad necesita
+ * demostrar colapso.
+ *
+ * Los valores de abajo son ABSOLUTOS (no una razón sobre `updates`,
+ * a diferencia de `CLIMATE_CHANGE_SPEED_RATIOS`): medido empíricamente
+ * que la velocidad de recuperación de la población depende de cantidades
+ * absolutas del motor (longitud del genoma, baseCyclesPerUpdate), no del
+ * total de generaciones configuradas — con un intervalo expresado como
+ * razón, duplicar `updates` le daba a la población el doble de
+ * generaciones absolutas para recuperarse entre eventos, y la
+ * extinción dejaba de ser consistente (2/5 semillas en vez de 5/5 al
+ * pasar de 1500 a 3000 generaciones). Con estos valores fijos: 10/10
+ * semillas (5 en 1500 gens, 5 en 3000 gens) llegan a extinción real,
+ * entre las generaciones 21 y 131 — ver el reporte de cierre de la
+ * Fase 4 para la tabla completa.
  */
-const RESOURCE_POOL_MIN_MULTIPLIER: Record<ClimateChangeSpeed, number> = {
-  slow: 0.7,
-  moderate: 0.4,
-  fast: 0.15,
-};
-
-/**
- * RF-015: frecuencia y severidad de los eventos catastróficos, atadas a
- * la MISMA velocidad climática (mismo razonamiento que el pool de
- * arriba, y que `CLIMATE_CHANGE_SPEED_RATIOS`: fiel a la definición de
- * cambio climático del proyecto — tendencia + varianza, donde más
- * eventos extremos es parte del mismo fenómeno, no uno aparte). El
- * intervalo es una razón sobre `updates`, igual que el período
- * climático: "lenta" ⇒ ~1 evento en toda la corrida, "rápida" ⇒ ~20.
- * Punto de partida a validar empíricamente (ver el reporte de cierre de
- * la Fase 4 para los números reales de la verificación).
- */
-const CATASTROPHE_INTERVAL_RATIOS: Record<ClimateChangeSpeed, number> = {
-  slow: 1,
-  moderate: 0.2,
-  fast: 0.05,
-};
-
-const CATASTROPHE_SEVERITY: Record<ClimateChangeSpeed, number> = {
-  slow: 0.05,
-  moderate: 0.15,
-  fast: 0.3,
-};
+const FAST_RESOURCE_POOL = { minMultiplier: 0.01, maxMultiplier: 0.1 };
+const FAST_CATASTROPHE: CatastropheConfig = { intervalGenerations: 10, severity: 0.9 };
 
 /** Criterio secundario de colapso (deuda de extinción): constantes fijas, no expuestas como control de usuario todavía. */
 const QUASI_EXTINCTION_THRESHOLD_FRACTION = 0.1;
@@ -249,15 +241,12 @@ function buildClimateConfig(persisted: PersistedRunConfig): ClimatePolicyConfig 
       minMultiplier: 1,
       maxMultiplier: CLIMATE_MAX_MULTIPLIER,
     })),
-    resourcePool: { minMultiplier: RESOURCE_POOL_MIN_MULTIPLIER[persisted.climateChangeSpeed], maxMultiplier: 1 },
+    ...(persisted.climateChangeSpeed === "fast" ? { resourcePool: FAST_RESOURCE_POOL } : {}),
   };
 }
 
-function buildCatastropheConfig(persisted: PersistedRunConfig): CatastropheConfig {
-  return {
-    intervalGenerations: Math.max(1, Math.round(persisted.updates * CATASTROPHE_INTERVAL_RATIOS[persisted.climateChangeSpeed])),
-    severity: CATASTROPHE_SEVERITY[persisted.climateChangeSpeed],
-  };
+function buildCatastropheConfig(): CatastropheConfig {
+  return FAST_CATASTROPHE;
 }
 
 function buildQuasiExtinctionConfig(): QuasiExtinctionConfig {
@@ -310,8 +299,9 @@ export function buildSimulationConfig(persisted: PersistedRunConfig): Simulation
     updates: persisted.updates,
     seed: persisted.seed,
     quasiExtinction: buildQuasiExtinctionConfig(),
-    ...(persisted.climateEnabled
-      ? { climate: buildClimateConfig(persisted), catastrophe: buildCatastropheConfig(persisted) }
+    ...(persisted.climateEnabled ? { climate: buildClimateConfig(persisted) } : {}),
+    ...(persisted.climateEnabled && persisted.climateChangeSpeed === "fast"
+      ? { catastrophe: buildCatastropheConfig() }
       : {}),
   };
 }

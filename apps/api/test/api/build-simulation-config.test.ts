@@ -61,18 +61,30 @@ describe("buildSimulationConfig", () => {
     expect(config.catastrophe).toBeUndefined();
   });
 
-  it("con climateEnabled, la frecuencia/severidad de catástrofes y el piso del pool escalan con climateChangeSpeed (RF-014/RF-015)", () => {
+  it("RF-014/RF-015 solo se activan en velocidad 'fast' — 'slow'/'moderate' quedan exactamente como la Fase 3 las validó", () => {
+    // Decisión tomada tras medir el efecto (ver config-request.ts): aplicar
+    // escasez de pool incluso suave a slow/moderate alteraba de forma
+    // significativa el fitness ya validado y cerrado en la Fase 3.
     const slow = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "slow", updates: 1000 }));
+    const moderate = buildSimulationConfig(
+      samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "moderate", updates: 1000 }),
+    );
     const fast = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "fast", updates: 1000 }));
 
-    // "Rápida" implica catástrofes más frecuentes (intervalo menor) y más severas.
-    expect(fast.catastrophe?.intervalGenerations).toBeLessThan(slow.catastrophe?.intervalGenerations as number);
-    expect(fast.catastrophe?.severity).toBeGreaterThan(slow.catastrophe?.severity as number);
+    expect(slow.catastrophe).toBeUndefined();
+    expect(slow.climate?.resourcePool).toBeUndefined();
+    expect(moderate.catastrophe).toBeUndefined();
+    expect(moderate.climate?.resourcePool).toBeUndefined();
 
-    // "Rápida" implica un piso de escasez de CPU más bajo (más severo).
-    expect(fast.climate?.resourcePool?.minMultiplier).toBeLessThan(slow.climate?.resourcePool?.minMultiplier as number);
-    expect(fast.climate?.resourcePool?.maxMultiplier).toBe(1);
-    expect(slow.climate?.resourcePool?.maxMultiplier).toBe(1);
+    expect(fast.catastrophe).toEqual({ intervalGenerations: 10, severity: 0.9 });
+    expect(fast.climate?.resourcePool).toEqual({ minMultiplier: 0.01, maxMultiplier: 0.1 });
+  });
+
+  it("el intervalo de catástrofe de 'fast' es absoluto, no escala con updates (medido: escalarlo rompía la extinción consistente)", () => {
+    const short = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "fast", updates: 1500 }));
+    const long = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "fast", updates: 3000 }));
+
+    expect(short.catastrophe?.intervalGenerations).toBe(long.catastrophe?.intervalGenerations);
   });
 
   it("quasiExtinction siempre está presente, con o sin clima activo", () => {
