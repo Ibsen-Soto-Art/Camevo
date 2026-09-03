@@ -1,5 +1,5 @@
 .camevo-app {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
   font-family: system-ui, sans-serif;
@@ -54,4 +54,38 @@
 
 .chart-container {
   margin-top: 1.5rem;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 800px) {
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.run-panel {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.run-panel h2 {
+  font-size: 1.1rem;
+  margin-top: 0;
+}
+
+.explanatory-panel {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f4f6f8;
+  border-left: 3px solid #1f77b4;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }

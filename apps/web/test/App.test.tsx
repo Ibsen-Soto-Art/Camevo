@@ -102,6 +102,7 @@ describe("<App />", () => {
           tasksSolvedThisUpdate: 0,
           climate: [{ taskId: "NOT", rewardMultiplier: 2 }],
           organisms: [],
+          geneticDiversity: 0.1,
         },
       }),
     });
@@ -110,6 +111,9 @@ describe("<App />", () => {
     await waitFor(() => {
       expect(document.querySelector(".status-line")).toHaveTextContent(/estado:\s*done/i);
     });
+
+    // RF-026: el panel explicativo aparece una vez que hay snapshots.
+    expect(document.querySelector(".explanatory-panel")).toBeInTheDocument();
   });
 
   it("muestra un mensaje de error si la creación de la corrida falla", async () => {
@@ -122,5 +126,42 @@ describe("<App />", () => {
     await userEvent.click(screen.getByRole("button", { name: "Iniciar corrida" }));
 
     expect(await screen.findByText(/gridWidth inválido/)).toBeInTheDocument();
+  });
+
+  it("incluye la velocidad climática elegida en el body de POST /runs (RF-012)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ runId: "run-speed" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await userEvent.selectOptions(screen.getByLabelText("Velocidad del cambio climático"), "fast");
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar corrida" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(options.body as string)).toMatchObject({ climateChangeSpeed: "fast", climateEnabled: true });
+  });
+
+  it("modo comparación: arranca dos corridas con velocidades distintas y muestra dos paneles (RF-025)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ runId: "run-a" }) })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ runId: "run-b" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("checkbox", { name: /modo comparación/i }));
+
+    expect(screen.getByLabelText(/velocidad climática — corrida a/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/velocidad climática — corrida b/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar ambas corridas" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse((call[1] as RequestInit).body as string) as { climateChangeSpeed: string });
+    const speeds = bodies.map((b) => b.climateChangeSpeed).sort();
+    expect(speeds).toEqual(["fast", "slow"]);
+
+    expect(await screen.findByText(/run-a/)).toBeInTheDocument();
+    expect(await screen.findByText(/run-b/)).toBeInTheDocument();
   });
 });

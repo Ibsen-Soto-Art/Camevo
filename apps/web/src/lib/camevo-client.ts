@@ -1,6 +1,6 @@
 import type { CreateRunRequest, LiveMessage } from "@camevo/shared-types";
 
-export type { GenerationSnapshot, LiveMessage, ResourceSupply } from "@camevo/shared-types";
+export type { ClimateChangeSpeed, GenerationSnapshot, LiveMessage, PersistedRunConfig, ResourceSupply } from "@camevo/shared-types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
@@ -12,7 +12,18 @@ const WS_BASE = API_BASE.replace(/^http/, "ws");
  * compilación, no en tiempo de ejecución contra la API real.
  */
 export type RunFormValues = Required<
-  Pick<CreateRunRequest, "gridWidth" | "gridHeight" | "mutationRate" | "updates" | "placementMode" | "reproducibilityMode" | "climateEnabled">
+  Pick<
+    CreateRunRequest,
+    | "gridWidth"
+    | "gridHeight"
+    | "mutationRate"
+    | "updates"
+    | "placementMode"
+    | "reproducibilityMode"
+    | "climateEnabled"
+    | "climateChangeSpeed"
+    | "climateVarianceAmplitude"
+  >
 >;
 
 export async function createRun(values: RunFormValues): Promise<{ runId: string }> {
