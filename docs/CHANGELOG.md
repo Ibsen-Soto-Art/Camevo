@@ -6,7 +6,19 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
-## [v0.6.1] — Aclaración sobre variación genética en pie (Fase 3)
+## [v0.9.0] — Cierre de Fase 3: velocidad climática, diversidad y comparación
+
+**Documentos afectados:** ninguno directamente — la Fase 3 implementó control de velocidad
+e intensidad del cambio climático, diversidad genética, comparación de corridas en
+paralelo y el panel explicativo según lo especificado (RF-012, RF-013, RF-021, RF-025
+parcial, RF-026). La única aclaración de alcance que produjo (variación genética en pie)
+se documenta por separado en v0.8.2.
+
+Marcador de cierre de fase, no un cambio de documentación en sí mismo.
+
+---
+
+## [v0.8.2] — Aclaración sobre variación genética en pie (Fase 3)
 
 **Documentos afectados:** `01-vision-general.md` (v1.1 → v1.2)
 
@@ -14,6 +26,45 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 - Sección 9 (Referencias conceptuales): nota sobre variación genética en pie (*standing genetic variation*), conectando la decisión de implementación de la Fase 3 (sembrar un ancestro ya adaptado, en vez de depender de mutación nueva en tiempo real) con el concepto real de biología de la conservación.
 
 **Motivo:** al implementar el criterio de cierre de la Fase 3 (rescate evolutivo vs. deuda de extinción observables en un tiempo de corrida razonable), se decidió sembrar la población con un organismo que ya resuelve una tarea lógica desde la generación 0. Esto cambia qué prueba exactamente el demo (selección sobre variación ya presente, no aparición de mutación nueva bajo presión climática) y se decidió documentarlo explícitamente en vez de dejarlo implícito solo en comentarios de código.
+
+---
+
+## [v0.8.1] — RF-019: aclarado como multiplicador oscilante, no agotamiento real (Fase 2)
+
+**Documentos afectados:** `02-requisitos.md` (v1.1 → v1.2)
+
+### Changed
+- RF-019: se agrega nota de implementación aclarando que el "suministro por recurso" se
+  resuelve como multiplicador de recompensa oscilante (tendencia + varianza), no como
+  agotamiento real por consumo poblacional. Queda marcado como parcialmente resuelto.
+
+**Motivo:** al implementar climate/policy en la Fase 2, un modelo de agotamiento real por
+consumo resultó mayor alcance del necesario para demostrar el mecanismo climático central
+del proyecto (RF-011). La aclaración existía solo en comentarios de código y en el reporte
+de cierre de la Fase 2 — nunca había llegado al documento de requisitos versionado.
+
+---
+
+## [v0.8.0] — Cierre de Fase 2: climate/policy, API y persistencia
+
+**Documentos afectados:** ninguno directamente — la Fase 2 implementó climate/policy,
+api/rest, api/ws, persistence/repository y el frontend mínimo según lo especificado
+(RF-010, RF-011, RF-019 parcial, RF-030, RF-020, RF-022). La única aclaración de alcance
+que produjo (RF-019) se documenta por separado en v0.8.1.
+
+Marcador de cierre de fase, no un cambio de documentación en sí mismo.
+
+---
+
+## [v0.7.0] — Cierre de Fase 1: motor de evolución digital
+
+**Documentos afectados:** ninguno.
+
+Marcador de cierre de fase, no un cambio de documentación: la Fase 1 implementó el motor
+(engine/organism, engine/population, engine/tasks, simulation/orchestrator) exactamente
+según lo ya especificado en la Fase 0 (RF-001 a RF-009), sin requerir ningún cambio de
+alcance ni de arquitectura documentada. El detalle de la implementación se rastrea en git
+(apps/api/), no aquí — ver 05-estructura-repositorio.md.
 
 ---
 
@@ -110,5 +161,12 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 - **MAJOR** (`v1.x.x`): se reserva para cuando el proyecto pase de fase de documentación a desarrollo activo (fin de Fase 0).
 - **MINOR** (`vx.N.x`): cambios de alcance — se agrega, elimina o reincorpora un requisito o mecanismo.
 - **PATCH** (`vx.x.N`): correcciones menores de redacción, formato o aclaraciones que no cambian el alcance (se usará a partir de que ocurra el primer caso).
+
+**Excepción declarada (a partir de v0.7.0):** algunas entradas MINOR marcan el cierre de
+una fase de implementación (v0.7.0, v0.8.0, v0.9.0, ...) aunque esa fase, por sí sola, no
+haya cambiado ningún documento — "Documentos afectados: ninguno" en esos casos es
+intencional, no un error. Sirven como marcadores de hito histórico del proyecto; las
+aclaraciones de alcance reales que una fase sí produce (si las produce) se registran como
+entradas PATCH separadas dentro del mismo MINOR (p. ej. v0.8.1, v0.8.2 dentro de la Fase 2).
 
 Cada documento individual mantiene además su propio número de versión en el encabezado (ej. "Versión 1.1"), que se incrementa cuando ese documento específico cambia.
