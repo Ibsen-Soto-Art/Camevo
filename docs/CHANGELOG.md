@@ -6,6 +6,17 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.6.1] — Aclaración sobre variación genética en pie (Fase 3)
+
+**Documentos afectados:** `01-vision-general.md` (v1.1 → v1.2)
+
+### Added
+- Sección 9 (Referencias conceptuales): nota sobre variación genética en pie (*standing genetic variation*), conectando la decisión de implementación de la Fase 3 (sembrar un ancestro ya adaptado, en vez de depender de mutación nueva en tiempo real) con el concepto real de biología de la conservación.
+
+**Motivo:** al implementar el criterio de cierre de la Fase 3 (rescate evolutivo vs. deuda de extinción observables en un tiempo de corrida razonable), se decidió sembrar la población con un organismo que ya resuelve una tarea lógica desde la generación 0. Esto cambia qué prueba exactamente el demo (selección sobre variación ya presente, no aparición de mutación nueva bajo presión climática) y se decidió documentarlo explícitamente en vez de dejarlo implícito solo en comentarios de código.
+
+---
+
 ## [v0.6.0] — Estructura de repositorio actualizada
 
 **Documentos afectados:** `05-estructura-repositorio.md` (v1.0 → v1.1)

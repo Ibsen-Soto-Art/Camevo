@@ -6,7 +6,7 @@
 |---|---|
 | Nombre del proyecto | Camevo (**CAM**bio + **EVO**lución) |
 | Autor | Ibsen Alexis Soto Artunduaga (Frezzer) |
-| Documento | Visión del Proyecto (v1.1 — ver `CHANGELOG.md`) |
+| Documento | Visión del Proyecto (v1.2 — ver `CHANGELOG.md`) |
 | Estado | Borrador inicial — Fase 0 (Documentación) |
 | Repositorio propuesto | `camevo` (renombrado desde `proVida`) |
 
@@ -82,3 +82,4 @@ Desarrollar una plataforma web que simule visualmente el impacto del cambio clim
 - Ofria, C. & Wilke, C. — Avida: A software platform for research in computational evolutionary biology.
 - IPCC — Definición de cambio climático (cambios persistentes y estadísticamente significativos en media, variabilidad y frecuencia de eventos extremos).
 - Conceptos de biología de la conservación: rescate evolutivo (*evolutionary rescue*) y deuda de extinción (*extinction debt*).
+- Variación genética en pie (*standing genetic variation*): en biología de la conservación, el rescate evolutivo real depende con más frecuencia de que la selección actúe sobre variantes ya presentes en la población (heredadas, no necesariamente expresadas hasta que el ambiente cambia) que de que aparezca una mutación nueva justo a tiempo. La implementación de la Fase 3 (docs/04-roadmap-fases.md) refleja esto deliberadamente: la corrida se siembra con un organismo ancestral que ya resuelve una tarea lógica (variación en pie desde la generación 0), en vez de depender de que la mutación la descubra en tiempo real bajo presión climática — más fiel al mecanismo real, y necesario además para que el efecto de la velocidad climática sea observable en un tiempo de corrida razonable (ver el reporte de cierre de la Fase 3 para la medición que llevó a esta decisión).
