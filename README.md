@@ -10,16 +10,19 @@ la documentación completa (visión, requisitos, arquitectura, roadmap).
 
 ## Entorno local
 
+Monorepo con npm workspaces: instalar siempre desde la raíz (un único
+`node_modules`/lockfile para `apps/*` y `packages/*`).
+
 ```bash
 cp .env.example .env    # variables de Postgres/API (ver .env.example)
 docker compose up -d camevo-db
+npm install              # instala apps/api, apps/web y packages/shared-types de una vez
 ```
 
 ### Motor + API (`apps/api`)
 
 ```bash
 cd apps/api
-npm install
 npm test                # engine/*, climate/policy/*, api/*, persistence/*
 npm run lint             # regla de frontera climate/policy → engine (ver eslint.config.mjs)
 ```
@@ -35,9 +38,16 @@ DATABASE_URL=postgres://camevo:camevo@localhost:5432/camevo API_PORT=3001 \
 
 ```bash
 cd apps/web
-npm install
 VITE_API_URL=http://localhost:3001 npm run dev
 ```
+
+Tests: `npm test` (Vitest + React Testing Library, componentes con
+mocks de `fetch`/`WebSocket` — rápido, sin servicios reales) y
+`npm run test:e2e` (Playwright: levanta `apps/api` + `apps/web` de
+verdad y conduce un navegador real contra ellos; requiere `camevo-db`
+arriba). El primero nunca hubiera atrapado el bug de CORS ni la
+dependencia faltante de `react-is` — ambos solo se manifestaban contra
+un backend/build real, por eso existe el segundo.
 
 ## Demo end-to-end de la Fase 2
 
