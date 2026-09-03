@@ -89,3 +89,20 @@
   font-size: 0.9rem;
   line-height: 1.4;
 }
+
+.explanatory-panel .panel-note {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid #dbe1e6;
+  color: #555;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.chart-caption {
+  margin-top: 0.4rem;
+  color: #777;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}

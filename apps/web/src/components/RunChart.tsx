@@ -24,7 +24,18 @@ export interface RunChartProps {
   readonly height?: number;
 }
 
-/** Fitness promedio (RF-020) + diversidad genética (RF-021) + curva climática por tarea (RF-022), superpuestas. */
+/**
+ * Fitness promedio (RF-020) + diversidad genética (RF-021) + curva
+ * climática por tarea (RF-022), superpuestas.
+ *
+ * La leyenda de diversidad dice "(aprox.)" y hay una nota debajo del
+ * gráfico a propósito: la métrica (engine/population/diversity.ts)
+ * mide, medido en diversity.test.ts, que el ruido por desalineamiento
+ * de indels puede ser ~27% de una señal de heterogeneidad real
+ * comparable (0.031 de 0.115) — no es despreciable, así que no basta
+ * con dejarlo documentado solo en comentarios de código/tests que el
+ * usuario nunca ve.
+ */
 export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   const climateTaskIds = useMemo(() => {
     const ids = new Set<string>();
@@ -37,55 +48,62 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   const chartRows = useMemo(() => toChartRows(snapshots), [snapshots]);
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={chartRows} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="generation" label={{ value: "Generación", position: "insideBottom", offset: -5 }} />
-        <YAxis
-          yAxisId="fitness"
-          domain={[0, "auto"]}
-          label={{ value: "Fitness / diversidad", angle: -90, position: "insideLeft" }}
-        />
-        <YAxis
-          yAxisId="climate"
-          orientation="right"
-          domain={[0, "auto"]}
-          label={{ value: "Multiplicador climático", angle: 90, position: "insideRight" }}
-        />
-        <Tooltip />
-        <Legend />
-        <Line
-          yAxisId="fitness"
-          type="monotone"
-          dataKey="averageFitness"
-          name="Fitness promedio"
-          stroke="#1f77b4"
-          dot={false}
-          isAnimationActive={false}
-        />
-        <Line
-          yAxisId="fitness"
-          type="monotone"
-          dataKey="geneticDiversity"
-          name="Diversidad genética"
-          stroke="#ff7f0e"
-          strokeDasharray="4 3"
-          dot={false}
-          isAnimationActive={false}
-        />
-        {climateTaskIds.map((taskId, index) => (
-          <Line
-            key={taskId}
+    <div>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={chartRows} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="generation" label={{ value: "Generación", position: "insideBottom", offset: -5 }} />
+          <YAxis
+            yAxisId="fitness"
+            domain={[0, "auto"]}
+            label={{ value: "Fitness / diversidad", angle: -90, position: "insideLeft" }}
+          />
+          <YAxis
             yAxisId="climate"
+            orientation="right"
+            domain={[0, "auto"]}
+            label={{ value: "Multiplicador climático", angle: 90, position: "insideRight" }}
+          />
+          <Tooltip />
+          <Legend />
+          <Line
+            yAxisId="fitness"
             type="monotone"
-            dataKey={taskId}
-            name={`Clima: ${taskId}`}
-            stroke={CLIMATE_COLORS[index % CLIMATE_COLORS.length]}
+            dataKey="averageFitness"
+            name="Fitness promedio"
+            stroke="#1f77b4"
             dot={false}
             isAnimationActive={false}
           />
-        ))}
-      </LineChart>
-    </ResponsiveContainer>
+          <Line
+            yAxisId="fitness"
+            type="monotone"
+            dataKey="geneticDiversity"
+            name="Diversidad genética (aprox.)"
+            stroke="#ff7f0e"
+            strokeDasharray="4 3"
+            dot={false}
+            isAnimationActive={false}
+          />
+          {climateTaskIds.map((taskId, index) => (
+            <Line
+              key={taskId}
+              yAxisId="climate"
+              type="monotone"
+              dataKey={taskId}
+              name={`Clima: ${taskId}`}
+              stroke={CLIMATE_COLORS[index % CLIMATE_COLORS.length]}
+              dot={false}
+              isAnimationActive={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+      <p className="chart-caption">
+        La diversidad genética es una aproximación: compara genomas por posición sin alinearlos, así que una parte del
+        número (hasta ~27% de una diferencia real comparable, medido) puede venir de que los genomas tienen distinta
+        longitud, no solo de que sean funcionalmente distintos.
+      </p>
+    </div>
   );
 }

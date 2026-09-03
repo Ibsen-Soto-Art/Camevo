@@ -198,11 +198,23 @@ export default function App() {
 
       {compareMode ? (
         <div className="compare-grid">
-          <RunPanel title={`Corrida A — velocidad ${speedA}`} climateChangeSpeed={speedA} run={runA} chartHeight={320} />
-          <RunPanel title={`Corrida B — velocidad ${speedB}`} climateChangeSpeed={speedB} run={runB} chartHeight={320} />
+          <RunPanel
+            title={`Corrida A — velocidad ${speedA}`}
+            climateEnabled
+            climateChangeSpeed={speedA}
+            run={runA}
+            chartHeight={320}
+          />
+          <RunPanel
+            title={`Corrida B — velocidad ${speedB}`}
+            climateEnabled
+            climateChangeSpeed={speedB}
+            run={runB}
+            chartHeight={320}
+          />
         </div>
       ) : (
-        <RunPanel title="Corrida" climateChangeSpeed={speedSingle} run={runSingle} />
+        <RunPanel title="Corrida" climateEnabled={climateEnabled} climateChangeSpeed={speedSingle} run={runSingle} />
       )}
     </main>
   );

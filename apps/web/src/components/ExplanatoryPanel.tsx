@@ -13,23 +13,31 @@ function average(values: readonly number[]): number {
 
 /**
  * RF-026: conecta lo que se ve en el gráfico con su análogo real
- * (01-vision-general.md §9: rescate evolutivo / deuda de extinción).
- * La lectura ("sube"/"estancada") se basa en el fitness medido de la
+ * (01-vision-general.md §9: rescate evolutivo / deuda de extinción, y
+ * la nota sobre variación genética en pie que se agrega ahí mismo). La
+ * lectura ("sube"/"estancada") se basa en el fitness medido de la
  * propia corrida (primer cuarto vs. último cuarto, la misma técnica de
  * test/simulation/fitness-trend.test.ts), no solo en qué preset se
  * eligió — un preset "rápida" con suerte también puede mostrar mejora.
  *
- * Nota de limitación, declarada aquí y no solo en el código del motor:
- * "estancada" describe que el fitness deja de mejorar, no que la
- * población muera — no existe todavía un mecanismo de colapso
- * poblacional real (eso es RF-014/015, Fase 4).
+ * Aclaración metodológica importante, pedida explícitamente antes de
+ * cerrar la Fase 3: el segundo ancestro ya adaptado
+ * (createNotSolvingGenome, sembrado cuando climateEnabled) significa
+ * que lo que este demo prueba es selección sobre VARIACIÓN GENÉTICA YA
+ * PRESENTE en la población desde el inicio ("standing genetic
+ * variation"), no una mutación nueva apareciendo justo a tiempo bajo
+ * presión climática en tiempo real. Es, de hecho, más fiel a cómo
+ * funciona el rescate evolutivo real (rara vez depende de que aparezca
+ * una mutación nueva en el momento exacto en que se la necesita) — pero
+ * el mensaje se lo dice al usuario explícitamente, no lo deja implícito.
  */
 export interface ExplanatoryPanelProps {
+  readonly climateEnabled: boolean;
   readonly climateChangeSpeed: ClimateChangeSpeed;
   readonly snapshots: readonly GenerationSnapshot[];
 }
 
-export default function ExplanatoryPanel({ climateChangeSpeed, snapshots }: ExplanatoryPanelProps) {
+export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, snapshots }: ExplanatoryPanelProps) {
   const { ratio, hasEnoughData } = useMemo(() => {
     const quarter = Math.floor(snapshots.length / 4);
     if (quarter < 1) return { ratio: 1, hasEnoughData: false };
@@ -37,6 +45,14 @@ export default function ExplanatoryPanel({ climateChangeSpeed, snapshots }: Expl
     const late = average(snapshots.slice(-quarter).map((s) => s.averageFitness));
     return { ratio: early > 0 ? late / early : 1, hasEnoughData: true };
   }, [snapshots]);
+
+  if (!climateEnabled) {
+    return (
+      <div className="explanatory-panel">
+        <p>Módulo climático desactivado: el fitness solo refleja selección sobre eficiencia de replicación (Fase 1), sin presión climática.</p>
+      </div>
+    );
+  }
 
   const speedLabel = SPEED_LABELS[climateChangeSpeed];
 
@@ -46,14 +62,14 @@ export default function ExplanatoryPanel({ climateChangeSpeed, snapshots }: Expl
   } else if (ratio > 1.08) {
     message =
       `Con velocidad climática ${speedLabel}, el fitness promedio subió respecto al comienzo de la corrida. ` +
-      "Esto es rescate evolutivo: la mutación y la selección natural alcanzaron a generar adaptaciones antes de que " +
-      "el ambiente cambiara demasiado — la población no solo sobrevive, mejora.";
+      "Esto es rescate evolutivo: la selección natural tuvo tiempo de favorecer, dentro de la variación genética que " +
+      "ya existía en la población, a los organismos mejor adaptados al clima vigente — la población no solo sobrevive, mejora.";
   } else if (ratio < 0.95) {
     message =
       `Con velocidad climática ${speedLabel}, el fitness promedio dejó de mejorar (o bajó) hacia el final de la corrida. ` +
-      "Esto es deuda de extinción: el clima cambia más rápido de lo que la mutación puede generar variantes útiles, " +
-      "así que las adaptaciones quedan obsoletas antes de consolidarse. No significa que la población haya muerto " +
-      "— significa que dejó de adaptarse, que es el primer paso hacia el colapso si la tendencia sigue.";
+      "Esto es deuda de extinción: el clima cambia más rápido de lo que la selección alcanza a consolidar una ventaja " +
+      "sobre el resto de la población antes de que el clima vuelva a cambiar qué es adaptativo. No significa que la " +
+      "población haya muerto — significa que dejó de adaptarse, que es el primer paso hacia el colapso si la tendencia sigue.";
   } else {
     message =
       `Con velocidad climática ${speedLabel}, el fitness se mantuvo relativamente estable: ni una mejora clara ni un ` +
@@ -63,6 +79,11 @@ export default function ExplanatoryPanel({ climateChangeSpeed, snapshots }: Expl
   return (
     <div className="explanatory-panel">
       <p>{message}</p>
+      <p className="panel-note">
+        Nota metodológica: la población parte con un organismo ya capaz de resolver una tarea (variación genética "en
+        pie", presente desde la generación 0), no con la esperanza de que una mutación nueva aparezca justo a tiempo —
+        así funciona también el rescate evolutivo real con más frecuencia.
+      </p>
     </div>
   );
 }
