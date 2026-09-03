@@ -1,8 +1,9 @@
+import type { PersistedRunConfig } from "@camevo/shared-types";
 import http from "node:http";
 import { WebSocketServer } from "ws";
 import { RunRepository } from "../persistence/repository/types";
-import { SimulationConfig } from "../simulation/orchestrator/run";
 import { createApp } from "./rest/app";
+import { buildSimulationConfig } from "./rest/config-request";
 import { streamRunLive } from "./ws/live-run";
 
 const STREAM_PATH = /^\/runs\/([^/]+)\/stream$/;
@@ -39,7 +40,8 @@ export function createServer(repository: RunRepository, msPerGeneration = 80): h
         return;
       }
 
-      const config = run.config as unknown as SimulationConfig;
+      const persistedConfig = run.config as unknown as PersistedRunConfig;
+      const config = buildSimulationConfig(persistedConfig);
       await streamRunLive(runId, config, repository, ws, msPerGeneration);
     })();
   });

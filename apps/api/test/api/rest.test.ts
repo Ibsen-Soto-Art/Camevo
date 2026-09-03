@@ -45,11 +45,17 @@ describe("api/rest", () => {
     expect(body1.seed).toBe(body2.seed);
   });
 
-  it("climate/policy usa la MISMA semilla que la corrida, no una propia (RNF-003)", async () => {
+  it("PersistedRunConfig no incluye una semilla de clima separada (RNF-003)", async () => {
+    // PersistedRunConfig es deliberadamente plano: no expande el
+    // ClimatePolicyConfig completo (ver config-request.ts). La garantía
+    // real de "misma semilla" se verifica en
+    // test/api/build-simulation-config.test.ts, donde SÍ se expande.
     const res = await postRun({ climateEnabled: true });
-    const body = (await res.json()) as { seed: number; config: { climate?: { seed: number } } };
+    const body = (await res.json()) as { seed: number; config: { climateEnabled: boolean; climate?: unknown } };
 
-    expect(body.config.climate?.seed).toBe(body.seed);
+    expect(body.config.climateEnabled).toBe(true);
+    expect(body.config.climate).toBeUndefined();
+    expect(typeof body.seed).toBe("number");
   });
 
   it("rechaza parámetros fuera de rango (RNF-008)", async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { copyStep, createUniformGenome, decideMutationKind } from "../../src/engine/organism/genome";
+import { copyStep, createNotSolvingGenome, createUniformGenome, decideMutationKind } from "../../src/engine/organism/genome";
+import { createOrganism, step } from "../../src/engine/organism/vm";
 import { sequenceRng } from "../helpers/sequence-rng";
 
 describe("createUniformGenome", () => {
@@ -11,6 +12,36 @@ describe("createUniformGenome", () => {
 
   it("rechaza longitudes menores a 1", () => {
     expect(() => createUniformGenome("nop", 0)).toThrow();
+  });
+});
+
+describe("createNotSolvingGenome", () => {
+  it("tiene el largo total pedido, con replicate rellenando el resto", () => {
+    const genome = createNotSolvingGenome(13);
+    expect(genome).toHaveLength(13);
+    expect(genome.slice(3).every((instr) => instr.opcode === "replicate")).toBe(true);
+  });
+
+  it("funciona con el largo mínimo (solo el cassette, sin relleno)", () => {
+    expect(createNotSolvingGenome(3)).toHaveLength(3);
+  });
+
+  it("rechaza un largo menor al cassette", () => {
+    expect(() => createNotSolvingGenome(2)).toThrow();
+  });
+
+  it("efectivamente resuelve NOT desde su primera ejecución, para cualquier input", () => {
+    const genome = createNotSolvingGenome(13);
+    const organism = createOrganism(genome, { mutationRate: 0, id: "not-ancestor" });
+    const outputs: { value: number; inputs: readonly number[] }[] = [];
+
+    step(organism, { onOutput: (value, inputs) => outputs.push({ value, inputs }) }, sequenceRng([0.37]));
+    step(organism, { onOutput: (value, inputs) => outputs.push({ value, inputs }) }, sequenceRng([0.37]));
+    step(organism, { onOutput: (value, inputs) => outputs.push({ value, inputs }) }, sequenceRng([0.37]));
+
+    const solvingOutput = outputs.find((o) => o.inputs.length > 0);
+    expect(solvingOutput).toBeDefined();
+    expect(solvingOutput?.value).toBe((~(solvingOutput?.inputs[0] as number)) >>> 0);
   });
 });
 

@@ -22,6 +22,36 @@ export function createUniformGenome(opcode: Opcode, length: number, reg: Registe
   return Array.from({ length }, () => ({ opcode, reg }));
 }
 
+const NOT_SOLVING_CASSETTE: readonly Instruction[] = [
+  { opcode: "io", reg: "A" },
+  { opcode: "nand", reg: "A" },
+  { opcode: "io", reg: "A" },
+];
+
+/**
+ * Genoma ancestral que ya resuelve NOT desde su primera ejecución
+ * (io A → nand A → io A calcula el complemento de cualquier input que
+ * reciba, sin importar cuál sea), rellenado con `replicate` hasta
+ * `totalLength`.
+ *
+ * Se usa para sembrar un ancestro ya adaptado cuando hace falta
+ * observar el efecto de climate/policy (RF-011/012/013) dentro de un
+ * tiempo de corrida razonable: medido en la Fase 1
+ * (tasks-reward.test.ts), dejar que la mutación descubra esta misma
+ * secuencia por casualidad tarda cientos a miles de generaciones, y en
+ * algunas semillas no ocurre en absoluto dentro de la corrida — no es
+ * viable para un demo en vivo. Es una simplificación deliberada y
+ * declarada, no algo que "emerja" de forma natural en cada corrida.
+ */
+export function createNotSolvingGenome(totalLength: number): Genome {
+  if (totalLength < NOT_SOLVING_CASSETTE.length) {
+    throw new Error(`totalLength debe ser al menos ${NOT_SOLVING_CASSETTE.length}`);
+  }
+  const tailLength = totalLength - NOT_SOLVING_CASSETTE.length;
+  const tail = tailLength > 0 ? createUniformGenome("replicate", tailLength) : [];
+  return [...NOT_SOLVING_CASSETTE, ...tail];
+}
+
 export type MutationKind = "none" | "substitution" | "insertion" | "deletion";
 
 /**

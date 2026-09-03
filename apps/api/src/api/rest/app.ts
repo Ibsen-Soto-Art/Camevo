@@ -1,7 +1,6 @@
 import cors from "cors";
 import express, { Express } from "express";
 import { RunRepository } from "../../persistence/repository/types";
-import { SimulationConfig } from "../../simulation/orchestrator/run";
 import { CreateRunRequestBody, parseCreateRunRequest } from "./config-request";
 
 /**
@@ -52,9 +51,4 @@ export function createApp(repository: RunRepository): Express {
   });
 
   return app;
-}
-
-/** Reconstruye el SimulationConfig persistido (JSON plano) para reanudar/streamear una corrida. */
-export function configFromRecord(config: Record<string, unknown>): SimulationConfig {
-  return config as unknown as SimulationConfig;
 }
