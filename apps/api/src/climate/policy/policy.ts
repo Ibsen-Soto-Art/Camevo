@@ -12,6 +12,27 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
+ * Tendencia (onda senoidal, con fase propia) + varianza (ruido
+ * determinista) sobre [min, max] — la misma fórmula para cualquier
+ * cosa que climate/policy haga oscilar: recursos por tarea (RF-011) o
+ * el pool de CPU global (RF-014). `key` distingue la fuente de ruido
+ * (p. ej. el id de la tarea, o `"__pool__"` para el pool).
+ */
+function oscillate(
+  generation: number,
+  config: ClimatePolicyConfig,
+  key: string,
+  phase: number,
+  min: number,
+  max: number,
+): number {
+  const range = max - min;
+  const trendUnit = (Math.sin(TWO_PI * (generation / config.trendPeriodGenerations) + phase) + 1) / 2;
+  const noiseUnit = deterministicUnit(config.seed, generation, key) * 2 - 1;
+  return clamp(min + trendUnit * range + noiseUnit * config.varianceAmplitude * range, min, max);
+}
+
+/**
  * RF-019 en esta fase: el "suministro por recurso" se modela como un
  * multiplicador de recompensa oscilante (tendencia + varianza) por tarea,
  * NO como un recurso agotable por consumo poblacional (el modelo
@@ -28,26 +49,33 @@ function clamp(value: number, min: number, max: number): number {
  * el proyecto (01-vision-general.md: medias + variabilidad, no solo una
  * tendencia lineal).
  *
+ * RF-014 (Fase 4): el pool de CPU global (`resourcePoolMultiplier`) usa
+ * la MISMA fórmula de oscilación, con límites propios (`resourcePool`) y
+ * fase fija (no compite por índice con las tareas) — representa escasez
+ * de recursos independiente de qué tarea es rentable, no un cuarto
+ * "recurso por tarea".
+ *
  * Determinismo (RNF-003): usa la MISMA semilla que resuelve
  * simulation/orchestrator para el modo reproducible/experimental
  * (RF-007) — no una semilla propia — para que "misma corrida" implique
  * también "misma curva climática".
  */
 export function getClimateParameters(generation: number, config: ClimatePolicyConfig): ClimateParameters {
-  const resources: ResourceSupply[] = config.resources.map((resource, index) => {
-    const range = resource.maxMultiplier - resource.minMultiplier;
-    const phase = phaseFor(index, config.resources.length);
-    const trendUnit = (Math.sin(TWO_PI * (generation / config.trendPeriodGenerations) + phase) + 1) / 2;
-    const noiseUnit = deterministicUnit(config.seed, generation, resource.taskId) * 2 - 1;
-
-    const rewardMultiplier = clamp(
-      resource.minMultiplier + trendUnit * range + noiseUnit * config.varianceAmplitude * range,
+  const resources: ResourceSupply[] = config.resources.map((resource, index) => ({
+    taskId: resource.taskId,
+    rewardMultiplier: oscillate(
+      generation,
+      config,
+      resource.taskId,
+      phaseFor(index, config.resources.length),
       resource.minMultiplier,
       resource.maxMultiplier,
-    );
+    ),
+  }));
 
-    return { taskId: resource.taskId, rewardMultiplier };
-  });
+  const resourcePoolMultiplier = config.resourcePool
+    ? oscillate(generation, config, "__pool__", Math.PI, config.resourcePool.minMultiplier, config.resourcePool.maxMultiplier)
+    : 1;
 
-  return { generation, resources };
+  return { generation, resources, resourcePoolMultiplier };
 }

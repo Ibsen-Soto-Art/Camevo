@@ -58,4 +58,9 @@ export class Grid {
   populationSize(): number {
     return this.cells.reduce((count: number, cell) => count + (cell ? 1 : 0), 0);
   }
+
+  /** RF-015: elimina el organismo de una celda sin reemplazo (evento catastrófico). No-op si ya estaba vacía. */
+  kill(index: number): void {
+    this.cells[index] = null;
+  }
 }

@@ -46,6 +46,15 @@ export interface GenerationSnapshot {
   readonly organisms: readonly OrganismSummary[];
   /** RF-021: 0 = población idéntica; más cerca de 1 = más heterogénea (ver engine/population/diversity.ts). */
   readonly geneticDiversity: number;
+  /** Fase 4: población = 0. Estado absorbente — una vez true, se mantiene el resto de la corrida. */
+  readonly extinct: boolean;
+  /**
+   * Fase 4 (criterio secundario, RF-015/"deuda de extinción"): población por
+   * debajo del umbral configurado durante N generaciones consecutivas ahora
+   * mismo. A diferencia de `extinct`, NO es un estado absorbente: si la
+   * población se recupera por encima del umbral, vuelve a `false`.
+   */
+  readonly nearExtinct: boolean;
 }
 
 /** Mensajes que viaja por api/ws (`/runs/:id/stream`). */

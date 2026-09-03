@@ -4,11 +4,24 @@ import { ClimatePolicyConfig } from "../../climate/policy/types";
 import { Genome, RandomSource } from "../../engine/organism/genome";
 import { OrganismState, VmHooks, createOrganism, harvestOffspring, step } from "../../engine/organism/vm";
 import { Grid } from "../../engine/population/grid";
+import { applyCatastrophicEvent } from "../../engine/population/catastrophe";
 import { computeGeneticDiversity } from "../../engine/population/diversity";
 import { seedPopulation } from "../../engine/population/seeding";
 import { PlacementMode, chooseBirthTargetIndex } from "../../engine/population/placement";
 import { DEFAULT_TASKS, TaskDefinition, evaluateOutput } from "../../engine/tasks/task-registry";
 import { mulberry32 } from "./rng";
+
+/** RF-015: eventos catastróficos periódicos, cada `intervalGenerations` generaciones, matan `severity` (0-1) de la población. */
+export interface CatastropheConfig {
+  readonly intervalGenerations: number;
+  readonly severity: number;
+}
+
+/** Criterio secundario de colapso (deuda de extinción, 01-vision-general.md §9): no es absorbente, ver `nearExtinct`. */
+export interface QuasiExtinctionConfig {
+  readonly thresholdFraction: number;
+  readonly sustainedGenerations: number;
+}
 
 export interface SimulationConfig {
   gridWidth: number;
@@ -28,6 +41,9 @@ export interface SimulationConfig {
    * "misma curva climática" (RNF-003).
    */
   climate?: ClimatePolicyConfig;
+  /** RF-015. Si se omite, no ocurren eventos catastróficos (comportamiento de fases anteriores). */
+  catastrophe?: CatastropheConfig;
+  quasiExtinction?: QuasiExtinctionConfig;
   /** Observador opcional de cada recompensa de tarea otorgada (para pruebas/instrumentación). */
   onTaskSolved?: (event: TaskSolvedEvent) => void;
   /** Observador opcional de cada snapshot generado (para streaming en vivo por api/ws). */
@@ -57,6 +73,8 @@ export interface SimulationState {
   readonly tasks: readonly TaskDefinition[];
   generation: number;
   organismIdCounter: number;
+  /** Generaciones consecutivas (hasta ahora) por debajo del umbral de `quasiExtinction`. */
+  consecutiveBelowThreshold: number;
 }
 
 function shuffledInPlace<T>(items: T[], rng: RandomSource): T[] {
@@ -101,7 +119,15 @@ export function createSimulationState(config: SimulationConfig): SimulationState
   const rng = mulberry32(config.seed);
   const grid = new Grid({ width: config.gridWidth, height: config.gridHeight });
   const tasks = config.tasks ?? DEFAULT_TASKS;
-  const state: SimulationState = { config, rng, grid, tasks, generation: 0, organismIdCounter: 0 };
+  const state: SimulationState = {
+    config,
+    rng,
+    grid,
+    tasks,
+    generation: 0,
+    organismIdCounter: 0,
+    consecutiveBelowThreshold: 0,
+  };
   seedPopulation(grid, config.ancestorGenomes, config.mutationRate, rng, () => nextOrganismId(state));
   return state;
 }
@@ -117,6 +143,14 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
 
   const climateParams = config.climate ? getClimateParameters(generation, config.climate) : null;
   const climateMultipliers = new Map(climateParams?.resources.map((r) => [r.taskId, r.rewardMultiplier]) ?? []);
+  const poolMultiplier = climateParams?.resourcePoolMultiplier ?? 1;
+
+  // RF-015: el evento catastrófico ocurre ANTES del ciclo de reproducción
+  // de esta generación — los organismos eliminados no llegan a actuar.
+  // `grid.occupiedIndices()` (usado abajo) ya refleja a los sobrevivientes.
+  if (config.catastrophe && generation > 0 && generation % config.catastrophe.intervalGenerations === 0) {
+    applyCatastrophicEvent(grid, config.catastrophe.severity, rng);
+  }
 
   const order = shuffledInPlace(grid.occupiedIndices(), rng);
 
@@ -127,7 +161,11 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
     const organism = grid.cells[index];
     if (!organism) continue;
 
-    organism.cyclesRemaining = config.baseCyclesPerUpdate;
+    // RF-014: el pool de CPU global escala la asignación BASE; el bono
+    // por tarea resuelta (abajo) se suma después, sobre esta cantidad ya
+    // reducida — así la ventaja relativa de resolver una tarea se
+    // conserva incluso en un entorno escaso.
+    organism.cyclesRemaining = Math.round(config.baseCyclesPerUpdate * poolMultiplier);
     const hooks = makeTaskHooks(organism, config.baseCyclesPerUpdate, tasks, generation, climateMultipliers, (event) => {
       tasksSolvedThisUpdate += 1;
       config.onTaskSolved?.(event);
@@ -161,6 +199,21 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
     return [{ id: organism.id, x, y, fitness: organism.offspringProduced }];
   });
 
+  // Criterio primario (extinción): estado absorbente por construcción —
+  // sin organismos no hay replicación posible, así que no necesita lógica
+  // especial de irreversibilidad más allá de que population=0 se sostiene sola.
+  const extinct = populationSize === 0;
+
+  // Criterio secundario (cuasi-extinción / deuda de extinción): NO es
+  // absorbente — si la población se recupera por encima del umbral, el
+  // contador se reinicia y `nearExtinct` vuelve a false.
+  let nearExtinct = false;
+  if (state.config.quasiExtinction) {
+    const threshold = state.config.quasiExtinction.thresholdFraction * grid.size;
+    state.consecutiveBelowThreshold = populationSize < threshold ? state.consecutiveBelowThreshold + 1 : 0;
+    nearExtinct = state.consecutiveBelowThreshold >= state.config.quasiExtinction.sustainedGenerations;
+  }
+
   const snapshot: GenerationSnapshot = {
     generation,
     populationSize,
@@ -170,6 +223,8 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
     climate: climateParams?.resources ?? [],
     organisms,
     geneticDiversity: computeGeneticDiversity(liveOrganisms),
+    extinct,
+    nearExtinct,
   };
 
   state.generation += 1;
@@ -182,12 +237,20 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
  * sola vez. `climate/policy` se consulta aquí (vía `advanceGeneration`) si
  * `config.climate` está presente; si no, el comportamiento es idéntico al
  * de la Fase 1 (parámetros fijos).
+ *
+ * Termina antes de `config.updates` si la población se extingue
+ * (`snapshot.extinct`): sin organismos no hay nada que avanzar, así que
+ * seguir generando snapshots vacíos hasta el límite configurado no
+ * aportaría nada — ver también api/ws/live-run.ts, que aplica el mismo
+ * corte temprano sobre el stream en vivo.
  */
 export function runSimulation(config: SimulationConfig): SimulationResult {
   const state = createSimulationState(config);
   const snapshots: GenerationSnapshot[] = [];
   for (let i = 0; i < config.updates; i++) {
-    snapshots.push(advanceGeneration(state));
+    const snapshot = advanceGeneration(state);
+    snapshots.push(snapshot);
+    if (snapshot.extinct) break;
   }
   return { seed: config.seed, snapshots, grid: state.grid };
 }

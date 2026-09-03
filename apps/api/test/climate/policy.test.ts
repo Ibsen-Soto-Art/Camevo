@@ -98,3 +98,34 @@ describe("getClimateParameters — RF-011 (tendencia + varianza, desfasadas por 
     expect(anyDifference).toBe(true);
   });
 });
+
+describe("getClimateParameters — RF-014 (pool de CPU global, separado de los recursos)", () => {
+  it("sin resourcePool configurado, el multiplicador del pool siempre es 1 (comportamiento de fases anteriores intacto)", () => {
+    const config = baseConfig(7);
+    for (const params of sequence(config, 100)) {
+      expect(params.resourcePoolMultiplier).toBe(1);
+    }
+  });
+
+  it("con resourcePool configurado, el multiplicador se mantiene dentro de sus propios límites", () => {
+    const config: ClimatePolicyConfig = { ...baseConfig(7), resourcePool: { minMultiplier: 0.15, maxMultiplier: 1 } };
+    for (const params of sequence(config, 400)) {
+      expect(params.resourcePoolMultiplier).toBeGreaterThanOrEqual(0.15);
+      expect(params.resourcePoolMultiplier).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("el pool oscila de forma independiente de los recursos por tarea (no es un cuarto recurso disfrazado)", () => {
+    const config: ClimatePolicyConfig = { ...baseConfig(7), resourcePool: { minMultiplier: 0.15, maxMultiplier: 1 } };
+    const params = sequence(config, 200);
+    const poolValues = params.map((p) => p.resourcePoolMultiplier);
+    const notValues = params.map((p) => p.resources.find((r) => r.taskId === "NOT")!.rewardMultiplier);
+
+    // Si compartieran la misma fase/ruido, normalizados se moverían en lockstep; no es el caso.
+    const diverged = poolValues.some((pool, i) => {
+      const notNormalized = (notValues[i] as number) / 4; // techo de NOT en baseConfig
+      return Math.abs(pool - notNormalized) > 0.05;
+    });
+    expect(diverged).toBe(true);
+  });
+});
