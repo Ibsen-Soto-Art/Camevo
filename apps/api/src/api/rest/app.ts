@@ -1,3 +1,4 @@
+import cors from "cors";
 import express, { Express } from "express";
 import { RunRepository } from "../../persistence/repository/types";
 import { SimulationConfig } from "../../simulation/orchestrator/run";
@@ -12,6 +13,11 @@ import { CreateRunRequestBody, parseCreateRunRequest } from "./config-request";
  */
 export function createApp(repository: RunRepository): Express {
   const app = express();
+  // Sin esto, apps/web (puerto de Vite) no puede llamar a la API (otro
+  // origen) — el navegador bloquea la respuesta por CORS. Abierto para
+  // esta fase de desarrollo local; restringir por origen es tarea de la
+  // Fase 5 (despliegue) si conviene, según cómo quede Nginx.
+  app.use(cors());
   app.use(express.json());
 
   app.post("/runs", async (req, res) => {
