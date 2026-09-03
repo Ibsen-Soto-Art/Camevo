@@ -4,6 +4,7 @@ import { ClimatePolicyConfig } from "../../climate/policy/types";
 import { Genome, RandomSource } from "../../engine/organism/genome";
 import { OrganismState, VmHooks, createOrganism, harvestOffspring, step } from "../../engine/organism/vm";
 import { Grid } from "../../engine/population/grid";
+import { computeGeneticDiversity } from "../../engine/population/diversity";
 import { seedPopulation } from "../../engine/population/seeding";
 import { PlacementMode, chooseBirthTargetIndex } from "../../engine/population/placement";
 import { DEFAULT_TASKS, TaskDefinition, evaluateOutput } from "../../engine/tasks/task-registry";
@@ -152,8 +153,10 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
   }
 
   const populationSize = grid.populationSize();
+  const liveOrganisms: OrganismState[] = [];
   const organisms: OrganismSummary[] = grid.cells.flatMap((organism, index) => {
     if (!organism) return [];
+    liveOrganisms.push(organism);
     const { x, y } = grid.coordsOf(index);
     return [{ id: organism.id, x, y, fitness: organism.offspringProduced }];
   });
@@ -166,6 +169,7 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
     tasksSolvedThisUpdate,
     climate: climateParams?.resources ?? [],
     organisms,
+    geneticDiversity: computeGeneticDiversity(liveOrganisms),
   };
 
   state.generation += 1;

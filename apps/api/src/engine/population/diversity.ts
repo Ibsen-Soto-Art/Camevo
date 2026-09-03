@@ -1,8 +1,21 @@
-import { Instruction } from "../organism/instruction-set";
+import { Opcode, OPCODES, Register, REGISTERS } from "../organism/instruction-set";
 import { OrganismState } from "../organism/vm";
 
-function instructionKey(instruction: Instruction): string {
-  return `${instruction.opcode}:${instruction.reg}`;
+const REGISTER_COUNT = REGISTERS.length;
+const INSTRUCTION_KIND_COUNT = OPCODES.length * REGISTER_COUNT;
+
+const OPCODE_INDEX = new Map(OPCODES.map((opcode, i) => [opcode, i]));
+const REGISTER_INDEX = new Map(REGISTERS.map((reg, i) => [reg, i]));
+
+/**
+ * Índice denso [0, OPCODES.length*REGISTERS.length) para una instrucción,
+ * en vez de una clave de texto — evita asignar un string y usar un `Map`
+ * por cada organismo en cada posición del genoma; esta función corre
+ * O(N·L) veces por generación (dos pasadas, ver computeGeneticDiversity),
+ * así que el costo por-llamada importa.
+ */
+function instructionKindIndex(opcode: Opcode, reg: Register): number {
+  return (OPCODE_INDEX.get(opcode) ?? 0) * REGISTER_COUNT + (REGISTER_INDEX.get(reg) ?? 0);
 }
 
 /**
@@ -12,14 +25,16 @@ function instructionKey(instruction: Instruction): string {
  * es más común entre los organismos suficientemente largos para llegar
  * ahí, y promedia la fracción que no coincide con esa moda.
  */
-function positionalDiversity(organisms: readonly OrganismState[], direction: 1 | -1): number {
-  const maxLength = Math.max(...organisms.map((o) => o.genome.length));
+function positionalDiversity(organisms: readonly OrganismState[], maxLength: number, direction: 1 | -1): number {
+  const counts = new Int32Array(INSTRUCTION_KIND_COUNT);
   let sumMismatchFraction = 0;
   let countedPositions = 0;
 
   for (let offset = 0; offset < maxLength; offset++) {
-    const counts = new Map<string, number>();
+    counts.fill(0);
     let present = 0;
+    let modeCount = 0;
+
     for (const organism of organisms) {
       const length = organism.genome.length;
       if (offset >= length) continue;
@@ -27,11 +42,13 @@ function positionalDiversity(organisms: readonly OrganismState[], direction: 1 |
       const instruction = organism.genome[position];
       if (!instruction) continue;
       present += 1;
-      const key = instructionKey(instruction);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const kindIndex = instructionKindIndex(instruction.opcode, instruction.reg);
+      const updatedCount = counts[kindIndex]! + 1;
+      counts[kindIndex] = updatedCount;
+      if (updatedCount > modeCount) modeCount = updatedCount;
     }
+
     if (present === 0) continue;
-    const modeCount = Math.max(...counts.values());
     sumMismatchFraction += (present - modeCount) / present;
     countedPositions += 1;
   }
@@ -66,5 +83,11 @@ function positionalDiversity(organisms: readonly OrganismState[], direction: 1 |
  */
 export function computeGeneticDiversity(organisms: readonly OrganismState[]): number {
   if (organisms.length <= 1) return 0;
-  return Math.min(positionalDiversity(organisms, 1), positionalDiversity(organisms, -1));
+
+  let maxLength = 0;
+  for (const organism of organisms) {
+    if (organism.genome.length > maxLength) maxLength = organism.genome.length;
+  }
+
+  return Math.min(positionalDiversity(organisms, maxLength, 1), positionalDiversity(organisms, maxLength, -1));
 }
