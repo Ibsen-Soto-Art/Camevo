@@ -45,6 +45,13 @@ describe("api/rest", () => {
     expect(body1.seed).toBe(body2.seed);
   });
 
+  it("climate/policy usa la MISMA semilla que la corrida, no una propia (RNF-003)", async () => {
+    const res = await postRun({ climateEnabled: true });
+    const body = (await res.json()) as { seed: number; config: { climate?: { seed: number } } };
+
+    expect(body.config.climate?.seed).toBe(body.seed);
+  });
+
   it("rechaza parámetros fuera de rango (RNF-008)", async () => {
     const res = await postRun({ gridWidth: 100000, updates: 10_000_000 });
     expect(res.status).toBe(400);
