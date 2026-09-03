@@ -20,6 +20,10 @@ export function createApp(repository: RunRepository): Express {
   app.use(cors());
   app.use(express.json());
 
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
   app.post("/runs", async (req, res) => {
     const parsed = parseCreateRunRequest((req.body ?? {}) as CreateRunRequestBody);
     if ("errors" in parsed) {

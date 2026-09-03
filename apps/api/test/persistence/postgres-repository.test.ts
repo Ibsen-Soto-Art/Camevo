@@ -47,6 +47,16 @@ describe.skipIf(!available)("PostgresRunRepository (integración, requiere camev
     expect(snapshots.map((s) => s.generation)).toEqual([0, 1]);
     expect(snapshots[1]?.snapshot).toEqual({ generation: 1, averageFitness: 0.2 });
   });
+
+  it("getRun devuelve null (no lanza) para un id con formato inválido", async () => {
+    // Regresión: encontrado por el smoke test de Playwright — un id que no
+    // es un UUID válido hacía que Postgres lanzara "invalid input syntax
+    // for type uuid", filtrando un error crudo de la base de datos como
+    // un 500 en vez de un 404 limpio. InMemoryRunRepository nunca lo
+    // atrapaba porque no valida el formato de la clave.
+    const repo = new PostgresRunRepository(pool as Pool);
+    await expect(repo.getRun("no-existe")).resolves.toBeNull();
+  });
 });
 
 if (!available) {

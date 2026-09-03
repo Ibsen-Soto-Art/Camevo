@@ -20,6 +20,11 @@ interface RunRow {
   created_at: Date;
 }
 
+/** Código de error de Postgres para "invalid_text_representation" (p. ej. un UUID malformado). */
+function isInvalidTextRepresentation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "22P02";
+}
+
 function toRunRecord(row: RunRow): RunRecord {
   return {
     id: row.id,
@@ -44,9 +49,20 @@ export class PostgresRunRepository implements RunRepository {
   }
 
   async getRun(id: string): Promise<RunRecord | null> {
-    const result = await this.pool.query<RunRow>("SELECT id, config, seed, created_at FROM runs WHERE id = $1", [id]);
-    const row = result.rows[0];
-    return row ? toRunRecord(row) : null;
+    try {
+      const result = await this.pool.query<RunRow>("SELECT id, config, seed, created_at FROM runs WHERE id = $1", [id]);
+      const row = result.rows[0];
+      return row ? toRunRecord(row) : null;
+    } catch (error) {
+      // Un id con formato inválido (no-UUID) no puede existir: es
+      // equivalente a "no encontrado", no un error del servidor. Sin
+      // esto, Postgres lanza "invalid input syntax for type uuid" y ese
+      // error crudo termina filtrándose al cliente vía un 500.
+      if (isInvalidTextRepresentation(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   async saveSnapshot(runId: string, generation: number, snapshot: Record<string, unknown>): Promise<void> {
