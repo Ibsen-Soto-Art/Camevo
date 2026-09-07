@@ -1,6 +1,6 @@
 # CAMEVO — Roadmap por Fases
 
-**Versión 1.2 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.3 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un proyecto de aprendizaje construido de forma incremental. Cada fase tiene entregables verificables antes de avanzar a la siguiente.
 
@@ -96,6 +96,27 @@ El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un
 **Entregable:** escenarios climáticos configurables y combinables, cada uno documentado con su justificación biológica.
 
 > **Nota:** los mecanismos de gradiente espacial/migración y fragmentación de hábitat quedan explícitamente fuera del alcance del proyecto (ver `02-requisitos.md`, RF-016 y RF-017 marcados como excluidos).
+
+**Estado: ✅ Cerrada.**
+- RFs cubiertos: RF-014, RF-015. RF-018 no implementado (prioridad C, no bloqueante, tal
+  como estaba previsto en `02-requisitos.md`).
+- Decisión de diseño: RF-014 (pool de CPU) y RF-015 (eventos catastróficos) quedan activos
+  EXCLUSIVAMENTE en el preset de velocidad climática "Rápida" — medido que aplicarlos
+  incluso con límites suaves a "Lenta"/"Moderada" alteraba de forma significativa el
+  fitness que la Fase 3 ya había validado y cerrado (`CHANGELOG.md` v0.9.0).
+- Hallazgo empírico central, verificado antes de fijar los parámetros finales: ni el pool
+  de CPU reducido (`[0.01, 0.1]`) ni los eventos catastróficos (severidad 0.9 cada 10
+  generaciones), por separado, producen extinción en 1500 generaciones — ambos empujan a
+  la población cerca del borde, pero siempre se recupera. La extinción emerge únicamente
+  de la COMBINACIÓN de ambos mecanismos. El tiempo hasta la extinción depende además de la
+  capacidad adaptativa con la que parte la población: sin ninguna ventaja adaptativa muere
+  en el primer evento catastrófico exacto (generación 10, 5/5 semillas); con una ventaja
+  adaptativa de partida, sobrevive entre 3 y 13 veces más (generaciones 30-130, 5/5
+  semillas) antes de sucumbir igual — conecta directamente con el concepto de deuda de
+  extinción ya citado en `01-vision-general.md` §9: la población puede estar condenada
+  mucho antes de llegar a cero, y la adaptación compra tiempo, no garantiza escapar
+  indefinidamente. Evidencia completa en
+  `apps/api/test/simulation/collapse-mechanism-isolation.test.ts` (25 casos).
 
 ---
 

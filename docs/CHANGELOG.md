@@ -6,6 +6,60 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.10.1] — Corrección de la convención de versionado: MAJOR es el primer despliegue real
+
+**Documentos afectados:** `CHANGELOG.md` (esta misma convención de versionado, sección final)
+
+### Changed
+- La convención decía que MAJOR (`v1.x.x`) se reserva para "cuando el proyecto pase de fase
+  de documentación a desarrollo activo (fin de Fase 0)" — ese momento ya había pasado hace
+  varias fases (los cierres de Fase 1/2/3 se registraron como MINOR: v0.7.0, v0.8.0,
+  v0.9.0), dejando la convención escrita inconsistente con la práctica real. Se corrige:
+  MAJOR queda reservado para el primer despliegue real en producción
+  (`camevo.ibsen-soto.pro` sirviendo tráfico real, fin de la Fase 5).
+- Se extiende la "Excepción declarada" (v0.7.0) para aclarar explícitamente que los cierres
+  de fase seguirán registrándose como MINOR hasta ese punto, no solo hasta v0.9.0.
+
+**Motivo:** detectado al preparar el cierre de la Fase 4 — no tenía sentido seguir
+incrementando MINOR por cada fase mientras la convención escrita decía que ya debería
+haber ocurrido un MAJOR. Se corrige la convención hacia adelante; no se renumera el
+historial ya publicado (v0.1.0 a v0.10.0 se mantienen exactamente como están).
+
+---
+
+## [v0.10.0] — Cierre de Fase 4: pool de CPU y eventos catastróficos, solo en "Rápida"
+
+**Documentos afectados:** ninguno directamente — la Fase 4 implementó RF-014 (reducción del
+pool de CPU global) y RF-015 (eventos catastróficos periódicos). RF-018 (mutación atada a
+un parámetro de estrés ambiental) no se implementó — prioridad C, no bloqueante, tal como
+estaba previsto en `02-requisitos.md`.
+
+Decisión de diseño: RF-014/RF-015 quedan activos EXCLUSIVAMENTE en el preset de velocidad
+climática "Rápida" — medido, antes de fijar los parámetros finales, que aplicarlos incluso
+con límites suaves a "Lenta"/"Moderada" alteraba de forma significativa el fitness que la
+Fase 3 ya había validado y cerrado (v0.9.0). Esto preserva intactos esos números.
+
+Hallazgo empírico central de la fase (evidencia completa en
+`apps/api/test/simulation/collapse-mechanism-isolation.test.ts`, 25 casos):
+
+- Ni el pool de CPU reducido (`[0.01, 0.1]`) ni los eventos catastróficos (severidad 0.9
+  cada 10 generaciones), por separado, producen extinción en 1500 generaciones — ambos
+  empujan a la población cerca del borde, pero siempre se recupera. La extinción emerge
+  únicamente de la COMBINACIÓN de ambos mecanismos, no de que cualquiera por sí solo sea
+  letal.
+- El tiempo hasta la extinción depende de la capacidad adaptativa con la que parte la
+  población: sin ninguna ventaja adaptativa, muere en el primer evento catastrófico exacto
+  (generación 10, 5/5 semillas); con una ventaja adaptativa de partida, sobrevive entre 3 y
+  13 veces más (generaciones 30-130, 5/5 semillas) antes de sucumbir igual. Esto conecta
+  directamente con el concepto de deuda de extinción ya citado en `01-vision-general.md`
+  §9: la población puede estar condenada mucho antes de llegar a cero, y la adaptación
+  compra tiempo, no garantiza escapar indefinidamente.
+
+Marcador de cierre de fase (ver la excepción de versionado extendida en v0.10.1), no un
+cambio de documentación en sí mismo salvo por el hallazgo registrado aquí.
+
+---
+
 ## [v0.9.1] — Notas de cierre de Fase 1/2/3 en el roadmap
 
 **Documentos afectados:** `04-roadmap-fases.md` (v1.1 → v1.2)
@@ -178,15 +232,23 @@ alcance ni de arquitectura documentada. El detalle de la implementación se rast
 
 ## Convención de versionado de este changelog
 
-- **MAJOR** (`v1.x.x`): se reserva para cuando el proyecto pase de fase de documentación a desarrollo activo (fin de Fase 0).
-- **MINOR** (`vx.N.x`): cambios de alcance — se agrega, elimina o reincorpora un requisito o mecanismo.
-- **PATCH** (`vx.x.N`): correcciones menores de redacción, formato o aclaraciones que no cambian el alcance (se usará a partir de que ocurra el primer caso).
+- **MAJOR** (`v1.x.x`): se reserva para el primer despliegue real en producción
+  (`camevo.ibsen-soto.pro` sirviendo tráfico real, fin de la Fase 5) — corregido en v0.10.1;
+  antes decía "fin de Fase 0", que ya había quedado inconsistente con la práctica real: los
+  cierres de Fase 1/2/3 se registraron como MINOR (v0.7.0, v0.8.0, v0.9.0), no como MAJOR.
+- **MINOR** (`vx.N.x`): cambios de alcance — se agrega, elimina o reincorpora un requisito o
+  mecanismo — y, por la excepción de abajo, también el cierre de cada fase del roadmap
+  mientras no haya ocurrido el primer despliegue real.
+- **PATCH** (`vx.x.N`): correcciones menores de redacción, formato o aclaraciones que no cambian el alcance.
 
-**Excepción declarada (a partir de v0.7.0):** algunas entradas MINOR marcan el cierre de
-una fase de implementación (v0.7.0, v0.8.0, v0.9.0, ...) aunque esa fase, por sí sola, no
-haya cambiado ningún documento — "Documentos afectados: ninguno" en esos casos es
-intencional, no un error. Sirven como marcadores de hito histórico del proyecto; las
-aclaraciones de alcance reales que una fase sí produce (si las produce) se registran como
-entradas PATCH separadas dentro del mismo MINOR (p. ej. v0.8.1, v0.8.2 dentro de la Fase 2).
+**Excepción declarada (a partir de v0.7.0; alcance del punto de corte corregido en v0.10.1):**
+los cierres de fase de implementación (v0.7.0 Fase 1, v0.8.0 Fase 2, v0.9.0 Fase 3, v0.10.0
+Fase 4, y las que sigan) se registran como MINOR aunque esa fase, por sí sola, no haya
+cambiado ningún documento — "Documentos afectados: ninguno" en esos casos es intencional,
+no un error. Esto se mantiene así hasta el primer despliegue real en producción (fin de la
+Fase 5), momento en el que corresponde el primer MAJOR (v1.0.0). Las aclaraciones de
+alcance reales que una fase sí produce (si las produce) se registran como entradas PATCH
+separadas dentro del mismo MINOR (p. ej. v0.8.1 en la Fase 2, v0.8.2 en la Fase 3; v0.10.1
+en la Fase 4 — aunque en este caso corrigiendo esta misma convención, no un requisito).
 
 Cada documento individual mantiene además su propio número de versión en el encabezado (ej. "Versión 1.1"), que se incrementa cuando ese documento específico cambia.
