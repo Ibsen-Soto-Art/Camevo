@@ -1,7 +1,20 @@
+import type { GetRunResponse, ListRunsResponse, PersistedRunConfig, RunMetadata, RunSummary } from "@camevo/shared-types";
 import cors from "cors";
 import express, { Express } from "express";
 import { RunRepository } from "../../persistence/repository/types";
 import { CreateRunRequestBody, parseCreateRunRequest } from "./config-request";
+
+const DEFAULT_LIST_LIMIT = 20;
+const MAX_LIST_LIMIT = 100;
+
+/** Clampa un query param numérico de paginación, tolerando ausente/no-numérico/negativo. */
+function clampQueryNumber(raw: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
 
 /**
  * api/rest mínima de la Fase 2: crear una corrida y consultarla (config +
@@ -39,6 +52,28 @@ export function createApp(repository: RunRepository): Express {
     res.status(201).json({ runId: run.id, seed: run.seed, config: run.config });
   });
 
+  /** RF-025: corridas guardadas más recientes primero, para el selector de comparación histórica. */
+  app.get("/runs", async (req, res) => {
+    const limit = clampQueryNumber(req.query.limit, DEFAULT_LIST_LIMIT, 1, MAX_LIST_LIMIT);
+    const offset = clampQueryNumber(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+
+    const { runs, hasMore } = await repository.listRuns({ limit, offset });
+    const body: ListRunsResponse = {
+      runs: runs.map(
+        (run): RunSummary => ({
+          id: run.id,
+          seed: run.seed,
+          createdAt: run.createdAt,
+          config: run.config as unknown as PersistedRunConfig,
+          endedInExtinction: run.endedInExtinction,
+          snapshotCount: run.snapshotCount,
+        }),
+      ),
+      hasMore,
+    };
+    res.json(body);
+  });
+
   app.get("/runs/:id", async (req, res) => {
     const run = await repository.getRun(req.params.id as string);
     if (!run) {
@@ -47,7 +82,17 @@ export function createApp(repository: RunRepository): Express {
     }
 
     const snapshots = await repository.listSnapshots(run.id);
-    res.json({ run, snapshots: snapshots.map((s) => s.snapshot) });
+    const runMetadata: RunMetadata = {
+      id: run.id,
+      seed: run.seed,
+      createdAt: run.createdAt,
+      config: run.config as unknown as PersistedRunConfig,
+    };
+    const body: GetRunResponse = {
+      run: runMetadata,
+      snapshots: snapshots.map((s) => s.snapshot) as unknown as GetRunResponse["snapshots"],
+    };
+    res.json(body);
   });
 
   return app;

@@ -85,4 +85,59 @@ describe("api/rest", () => {
     expect(body.run.id).toBe(runId);
     expect(body.snapshots).toEqual([]);
   });
+
+  it("GET /runs/:id no incluye endedInExtinction/snapshotCount en run (esos solo viven en RunSummary)", async () => {
+    const createRes = await postRun({});
+    const { runId } = (await createRes.json()) as { runId: string };
+
+    const res = await fetch(`${baseUrl}/runs/${runId}`);
+    const body = (await res.json()) as { run: Record<string, unknown> };
+    expect(body.run).not.toHaveProperty("endedInExtinction");
+    expect(body.run).not.toHaveProperty("snapshotCount");
+  });
+
+  describe("GET /runs (RF-025: selector de comparación histórica)", () => {
+    it("lista las corridas guardadas más recientes primero, con paginación por query params", async () => {
+      // El repositorio se comparte entre todos los tests de este describe
+      // (beforeAll), así que ya existen corridas de tests anteriores: no
+      // podemos asumir un total exacto, solo que las dos que creamos aquí
+      // quedan al frente (más recientes) y que hasMore refleja el total real.
+      const { runId: firstId } = (await (await postRun({})).json()) as { runId: string };
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const { runId: secondId } = (await (await postRun({})).json()) as { runId: string };
+
+      const totalBody = (await (await fetch(`${baseUrl}/runs?limit=1000`)).json()) as { runs: unknown[] };
+      const total = totalBody.runs.length;
+
+      const res = await fetch(`${baseUrl}/runs?limit=1&offset=0`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { runs: { id: string }[]; hasMore: boolean };
+
+      expect(body.runs.length).toBe(1);
+      expect(body.runs[0]?.id).toBe(secondId);
+      expect(body.hasMore).toBe(total > 1);
+
+      const page2 = (await (await fetch(`${baseUrl}/runs?limit=1&offset=1`)).json()) as { runs: { id: string }[]; hasMore: boolean };
+      expect(page2.runs[0]?.id).toBe(firstId);
+      expect(page2.hasMore).toBe(total > 2);
+    });
+
+    it("cada entrada incluye endedInExtinction y snapshotCount", async () => {
+      const { runId } = (await (await postRun({})).json()) as { runId: string };
+
+      const res = await fetch(`${baseUrl}/runs?limit=100`);
+      const body = (await res.json()) as { runs: { id: string; endedInExtinction: boolean; snapshotCount: number }[] };
+      const entry = body.runs.find((r) => r.id === runId);
+
+      expect(entry?.endedInExtinction).toBe(false);
+      expect(entry?.snapshotCount).toBe(0);
+    });
+
+    it("ignora un limit fuera de rango o no numérico usando el default", async () => {
+      const res = await fetch(`${baseUrl}/runs?limit=not-a-number`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { runs: unknown[] };
+      expect(Array.isArray(body.runs)).toBe(true);
+    });
+  });
 });

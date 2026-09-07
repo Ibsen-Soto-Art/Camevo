@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool } from "pg";
-import { CreateRunInput, GenerationSnapshotRecord, RunRecord, RunRepository } from "./types";
+import { CreateRunInput, GenerationSnapshotRecord, ListRunsOptions, ListRunsResult, RunRecord, RunRepository, RunSummaryRecord } from "./types";
 
 const SCHEMA_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "schema.sql");
 
@@ -18,6 +18,11 @@ interface RunRow {
   config: Record<string, unknown>;
   seed: string | number;
   created_at: Date;
+}
+
+interface RunSummaryRow extends RunRow {
+  snapshot_count: string | number;
+  ended_in_extinction: boolean;
 }
 
 /** Código de error de Postgres para "invalid_text_representation" (p. ej. un UUID malformado). */
@@ -46,6 +51,38 @@ export class PostgresRunRepository implements RunRepository {
       [id, input.config, input.seed],
     );
     return toRunRecord(result.rows[0] as RunRow);
+  }
+
+  /**
+   * RF-025: pide `limit + 1` filas para saber si hay más sin una consulta
+   * COUNT(*) separada (ver in-memory-repository.ts para la contraparte que
+   * comparten los tests). El desenlace se calcula con BOOL_OR sobre el
+   * campo opaco `snapshot->>'extinct'` de cada snapshot — persistence no
+   * conoce el tipo `GenerationSnapshot` del motor (ver comentario en
+   * types.ts), solo agrega el JSON como texto/boolean crudo de Postgres.
+   */
+  async listRuns({ limit, offset }: ListRunsOptions): Promise<ListRunsResult> {
+    const result = await this.pool.query<RunSummaryRow>(
+      `SELECT
+         r.id, r.config, r.seed, r.created_at,
+         COUNT(gs.generation)::int AS snapshot_count,
+         COALESCE(BOOL_OR((gs.snapshot->>'extinct')::boolean), false) AS ended_in_extinction
+       FROM runs r
+       LEFT JOIN generation_snapshots gs ON gs.run_id = r.id
+       GROUP BY r.id
+       ORDER BY r.created_at DESC, r.id ASC
+       LIMIT $1 OFFSET $2`,
+      [limit + 1, offset],
+    );
+
+    const hasMore = result.rows.length > limit;
+    const runs: RunSummaryRecord[] = result.rows.slice(0, limit).map((row) => ({
+      ...toRunRecord(row),
+      snapshotCount: Number(row.snapshot_count),
+      endedInExtinction: row.ended_in_extinction,
+    }));
+
+    return { runs, hasMore };
   }
 
   async getRun(id: string): Promise<RunRecord | null> {

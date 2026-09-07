@@ -23,10 +23,35 @@ export interface CreateRunInput {
   readonly seed: number;
 }
 
+/**
+ * RF-025: entrada de una corrida para el selector de comparación
+ * histórica — extiende `RunRecord` con lo mínimo derivado de sus
+ * snapshots (sin exponer el array completo, eso es `listSnapshots`).
+ * `endedInExtinction` mira si CUALQUIER snapshot persistido tiene
+ * `extinct: true` (dato opaco desde este módulo, ver comentario de
+ * arriba: no importa el tipo `GenerationSnapshot` del motor).
+ */
+export interface RunSummaryRecord extends RunRecord {
+  readonly endedInExtinction: boolean;
+  readonly snapshotCount: number;
+}
+
+export interface ListRunsOptions {
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface ListRunsResult {
+  readonly runs: RunSummaryRecord[];
+  readonly hasMore: boolean;
+}
+
 /** RF-030: persistencia de configuración + snapshots por generación. */
 export interface RunRepository {
   createRun(input: CreateRunInput): Promise<RunRecord>;
   getRun(id: string): Promise<RunRecord | null>;
+  /** RF-025: corridas guardadas más recientes primero, para el selector de comparación histórica. */
+  listRuns(options: ListRunsOptions): Promise<ListRunsResult>;
   saveSnapshot(runId: string, generation: number, snapshot: Record<string, unknown>): Promise<void>;
   listSnapshots(runId: string): Promise<GenerationSnapshotRecord[]>;
 }

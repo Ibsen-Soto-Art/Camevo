@@ -93,3 +93,36 @@ export interface CreateRunRequest {
 export interface PersistedRunConfig extends Required<CreateRunRequest> {
   readonly seed: number;
 }
+
+/** Identidad + configuración de una corrida persistida — sin resultado (RF-030). */
+export interface RunMetadata {
+  readonly id: string;
+  readonly seed: number;
+  readonly createdAt: string;
+  readonly config: PersistedRunConfig;
+}
+
+/**
+ * RF-025: entrada de la lista de corridas guardadas — lo mínimo para
+ * distinguirlas en un selector sin tener que abrir cada una. A
+ * diferencia de `GetRunResponse.run`, sí incluye el desenlace
+ * (`endedInExtinction`) porque aquí NO viaja el array de snapshots
+ * completo del que derivarlo — sería la única fuente de verdad, no una
+ * segunda.
+ */
+export interface RunSummary extends RunMetadata {
+  readonly endedInExtinction: boolean;
+  readonly snapshotCount: number;
+}
+
+/** Respuesta de `GET /runs`. */
+export interface ListRunsResponse {
+  readonly runs: readonly RunSummary[];
+  readonly hasMore: boolean;
+}
+
+/** Respuesta de `GET /runs/:id`. `run` es solo identidad+config: el desenlace se lee de `snapshots.at(-1)`. */
+export interface GetRunResponse {
+  readonly run: RunMetadata;
+  readonly snapshots: readonly GenerationSnapshot[];
+}

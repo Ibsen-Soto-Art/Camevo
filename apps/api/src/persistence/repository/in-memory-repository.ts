@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { CreateRunInput, GenerationSnapshotRecord, RunRecord, RunRepository } from "./types";
+import { CreateRunInput, GenerationSnapshotRecord, ListRunsOptions, ListRunsResult, RunRecord, RunRepository, RunSummaryRecord } from "./types";
 
 /**
  * Implementación en memoria del mismo contrato que PostgresRunRepository.
@@ -26,6 +26,24 @@ export class InMemoryRunRepository implements RunRepository {
 
   async getRun(id: string): Promise<RunRecord | null> {
     return this.runs.get(id) ?? null;
+  }
+
+  async listRuns({ limit, offset }: ListRunsOptions): Promise<ListRunsResult> {
+    const sorted = [...this.runs.values()].sort(
+      (a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
+    );
+    const page = sorted.slice(offset, offset + limit);
+
+    const runs: RunSummaryRecord[] = page.map((run) => {
+      const snaps = this.snapshots.get(run.id) ?? [];
+      return {
+        ...run,
+        snapshotCount: snaps.length,
+        endedInExtinction: snaps.some((s) => (s.snapshot as { extinct?: unknown }).extinct === true),
+      };
+    });
+
+    return { runs, hasMore: offset + limit < sorted.length };
   }
 
   async saveSnapshot(runId: string, generation: number, snapshot: Record<string, unknown>): Promise<void> {
