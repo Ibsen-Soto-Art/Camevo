@@ -1,7 +1,7 @@
 import http from "node:http";
 import { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createApp } from "../../src/api/rest/app";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createApp, resolveAllowedOrigins } from "../../src/api/rest/app";
 import { InMemoryRunRepository } from "../../src/persistence/repository/in-memory-repository";
 
 describe("api/rest", () => {
@@ -138,6 +138,32 @@ describe("api/rest", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { runs: unknown[] };
       expect(Array.isArray(body.runs)).toBe(true);
+    });
+  });
+
+  describe("CORS (Fase 5): origen restringido, no abierto", () => {
+    afterEach(() => {
+      delete process.env.CORS_ORIGIN;
+    });
+
+    it("resolveAllowedOrigins: sin CORS_ORIGIN, solo permite los puertos de desarrollo local", () => {
+      delete process.env.CORS_ORIGIN;
+      expect(resolveAllowedOrigins()).toEqual(["http://localhost:5173", "http://localhost:4173"]);
+    });
+
+    it("resolveAllowedOrigins: con CORS_ORIGIN, parsea una lista separada por comas y descarta espacios/vacíos", () => {
+      process.env.CORS_ORIGIN = "https://camevo.ibsen-soto.pro, http://localhost:5173 ,,";
+      expect(resolveAllowedOrigins()).toEqual(["https://camevo.ibsen-soto.pro", "http://localhost:5173"]);
+    });
+
+    it("responde con Access-Control-Allow-Origin para un origen permitido", async () => {
+      const res = await fetch(`${baseUrl}/health`, { headers: { Origin: "http://localhost:5173" } });
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+    });
+
+    it("NO refleja un origen fuera de la lista permitida", async () => {
+      const res = await fetch(`${baseUrl}/health`, { headers: { Origin: "https://sitio-ajeno.example" } });
+      expect(res.headers.get("access-control-allow-origin")).toBeNull();
     });
   });
 });

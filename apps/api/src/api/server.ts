@@ -2,7 +2,7 @@ import type { PersistedRunConfig } from "@camevo/shared-types";
 import http from "node:http";
 import { WebSocketServer } from "ws";
 import { RunRepository } from "../persistence/repository/types";
-import { createApp } from "./rest/app";
+import { createApp, resolveAllowedOrigins } from "./rest/app";
 import { buildSimulationConfig } from "./rest/config-request";
 import { streamRunLive } from "./ws/live-run";
 
@@ -19,6 +19,16 @@ export function createServer(repository: RunRepository, msPerGeneration = 80): h
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
+    // El middleware `cors` de Express solo protege las rutas REST — un
+    // handshake de WebSocket nunca pasa por ahí, así que sin esto
+    // cualquier sitio podría abrir conexiones directas a `/runs/:id/stream`
+    // pese a que la API REST ya rechace su origen.
+    const origin = req.headers.origin;
+    if (origin && !resolveAllowedOrigins().includes(origin)) {
+      socket.destroy();
+      return;
+    }
+
     const url = new URL(req.url ?? "", "http://localhost");
     const match = STREAM_PATH.exec(url.pathname);
     if (!match) {

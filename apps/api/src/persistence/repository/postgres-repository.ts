@@ -54,24 +54,40 @@ export class PostgresRunRepository implements RunRepository {
   }
 
   /**
-   * RF-025: pide `limit + 1` filas para saber si hay más sin una consulta
-   * COUNT(*) separada (ver in-memory-repository.ts para la contraparte que
-   * comparten los tests). El desenlace se calcula con BOOL_OR sobre el
-   * campo opaco `snapshot->>'extinct'` de cada snapshot — persistence no
-   * conoce el tipo `GenerationSnapshot` del motor (ver comentario en
-   * types.ts), solo agrega el JSON como texto/boolean crudo de Postgres.
+   * RF-025/RNF-008: pide `limit + 1` filas para saber si hay más sin una
+   * consulta COUNT(*) separada (ver in-memory-repository.ts para la
+   * contraparte que comparten los tests). El desenlace se calcula con
+   * BOOL_OR sobre el campo opaco `snapshot->>'extinct'` de cada snapshot —
+   * persistence no conoce el tipo `GenerationSnapshot` del motor (ver
+   * comentario en types.ts), solo agrega el JSON como texto/boolean crudo
+   * de Postgres.
+   *
+   * La paginación (LIMIT/OFFSET) ocurre en el CTE `page`, ANTES del JOIN
+   * contra generation_snapshots — medido empíricamente (EXPLAIN ANALYZE
+   * contra ~51k snapshots acumulados durante la prueba de carga de la
+   * Fase 5) que hacer el JOIN+GROUP BY primero y paginar después obliga a
+   * Postgres a agregar TODOS los snapshots de TODAS las corridas antes de
+   * poder aplicar el LIMIT (5+ segundos con ese volumen), sin importar
+   * cuán chico sea `limit`. Con el CTE, el costo escala con `limit`
+   * (paginas de runs, tabla pequeña), no con el total histórico de
+   * snapshots — bajó a low milliseconds contra el mismo volumen.
    */
   async listRuns({ limit, offset }: ListRunsOptions): Promise<ListRunsResult> {
     const result = await this.pool.query<RunSummaryRow>(
-      `SELECT
-         r.id, r.config, r.seed, r.created_at,
+      `WITH page AS (
+         SELECT id, config, seed, created_at
+         FROM runs
+         ORDER BY created_at DESC, id ASC
+         LIMIT $1 OFFSET $2
+       )
+       SELECT
+         page.id, page.config, page.seed, page.created_at,
          COUNT(gs.generation)::int AS snapshot_count,
          COALESCE(BOOL_OR((gs.snapshot->>'extinct')::boolean), false) AS ended_in_extinction
-       FROM runs r
-       LEFT JOIN generation_snapshots gs ON gs.run_id = r.id
-       GROUP BY r.id
-       ORDER BY r.created_at DESC, r.id ASC
-       LIMIT $1 OFFSET $2`,
+       FROM page
+       LEFT JOIN generation_snapshots gs ON gs.run_id = page.id
+       GROUP BY page.id, page.config, page.seed, page.created_at
+       ORDER BY page.created_at DESC, page.id ASC`,
       [limit + 1, offset],
     );
 

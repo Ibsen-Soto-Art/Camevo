@@ -7,6 +7,26 @@ import { CreateRunRequestBody, parseCreateRunRequest } from "./config-request";
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
 
+/**
+ * Fase 5: el `cors()` abierto de las fases de desarrollo local queda
+ * restringido a una lista explícita de orígenes. Sin `CORS_ORIGIN`
+ * (docker-compose.yml de desarrollo no la define), solo permite los
+ * puertos donde corre `apps/web` localmente; producción la fija a
+ * `https://camevo.ibsen-soto.pro` vía docker-compose.prod.yml.
+ */
+const DEFAULT_DEV_ORIGINS = ["http://localhost:5173", "http://localhost:4173"];
+
+export function resolveAllowedOrigins(): string[] {
+  const raw = process.env.CORS_ORIGIN;
+  if (!raw) {
+    return DEFAULT_DEV_ORIGINS;
+  }
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+}
+
 /** Clampa un query param numérico de paginación, tolerando ausente/no-numérico/negativo. */
 function clampQueryNumber(raw: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(raw);
@@ -25,11 +45,7 @@ function clampQueryNumber(raw: unknown, fallback: number, min: number, max: numb
  */
 export function createApp(repository: RunRepository): Express {
   const app = express();
-  // Sin esto, apps/web (puerto de Vite) no puede llamar a la API (otro
-  // origen) — el navegador bloquea la respuesta por CORS. Abierto para
-  // esta fase de desarrollo local; restringir por origen es tarea de la
-  // Fase 5 (despliegue) si conviene, según cómo quede Nginx.
-  app.use(cors());
+  app.use(cors({ origin: resolveAllowedOrigins() }));
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
