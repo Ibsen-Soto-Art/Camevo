@@ -68,13 +68,31 @@ export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, s
   // Fase 4: extinción/cuasi-extinción son HECHOS observados en la corrida
   // (población = 0, o sostenida bajo un umbral) — se priorizan sobre la
   // lectura de tendencia de fitness de abajo, que es una interpretación.
+  //
+  // El mensaje de extinción NO es solo "murieron": verificado
+  // empíricamente (ver test/simulation/collapse-mechanism-isolation.test.ts)
+  // que CUÁNTO tarda en llegar la extinción depende de la capacidad
+  // adaptativa con la que partió la población — sin ninguna capacidad de
+  // resolver tareas, muere en el primer evento catastrófico; con ella,
+  // sobrevive varias veces más generaciones antes de sucumbir igual. La
+  // adaptación compra tiempo bajo este nivel de estrés, no garantiza
+  // escapar indefinidamente — la lectura correcta es deuda de extinción
+  // (01-vision-general.md §9), no "la población perdió la carrera".
   if (last?.extinct) {
     return (
       <div className="explanatory-panel">
         <p>
           La población se extinguió en la generación {last.generation} (velocidad climática {speedLabel}): no quedan
           organismos vivos, así que no hay reproducción posible — es un estado del que la corrida no puede
-          recuperarse. Esto es colapso poblacional real, no solo un fitness que dejó de mejorar.
+          recuperarse.
+        </p>
+        <p className="panel-note">
+          Esto es deuda de extinción, no un evento repentino sin causa: bajo este nivel de estrés climático, la
+          población estaba condenada mucho antes de llegar a cero. Cuánto tarda en morir depende de la capacidad
+          adaptativa con la que partió — una población sin ninguna ventaja adaptativa muere en el primer evento
+          catastrófico severo; una con variación genética en pie útil sobrevive varias veces más generaciones antes
+          de sucumbir igual. La adaptación compra tiempo, no garantiza supervivencia indefinida ante un estrés lo
+          bastante severo.
         </p>
       </div>
     );

@@ -39,6 +39,10 @@ describe("<ExplanatoryPanel /> — Fase 4: colapso/extinción tienen prioridad s
 
     expect(screen.getByText(/se extinguió en la generación 8/i)).toBeInTheDocument();
     expect(screen.getByText(/no puede recuperarse/i)).toBeInTheDocument();
+    // El mensaje debe explicar QUE el tiempo hasta la extinción varía según
+    // la adaptación de partida (deuda de extinción), no solo el hecho binario.
+    expect(screen.getByText(/deuda de extinción/i)).toBeInTheDocument();
+    expect(screen.getByText(/compra tiempo/i)).toBeInTheDocument();
     // No debe caer en el mensaje de "rescate evolutivo" solo porque el fitness venía subiendo antes de la extinción.
     expect(screen.queryByText(/rescate evolutivo/i)).not.toBeInTheDocument();
   });
