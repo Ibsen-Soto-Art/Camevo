@@ -30,6 +30,14 @@ function average(values: readonly number[]): number {
  * funciona el rescate evolutivo real (rara vez depende de que aparezca
  * una mutación nueva en el momento exacto en que se la necesita) — pero
  * el mensaje se lo dice al usuario explícitamente, no lo deja implícito.
+ *
+ * Fase 4: un tercer desenlace posible, priorizado sobre la lectura de
+ * tendencia de fitness cuando corresponde — `extinct`/`nearExtinct`
+ * describen un HECHO observado en la corrida (población = 0, o por
+ * debajo de un umbral durante N generaciones), no una interpretación.
+ * El texto describe exactamente eso, sin exagerar ni psicologizar
+ * ("la población se extinguió en la generación X", no "la población
+ * luchó hasta el final").
  */
 export interface ExplanatoryPanelProps {
   readonly climateEnabled: boolean;
@@ -55,6 +63,35 @@ export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, s
   }
 
   const speedLabel = SPEED_LABELS[climateChangeSpeed];
+  const last = snapshots.at(-1);
+
+  // Fase 4: extinción/cuasi-extinción son HECHOS observados en la corrida
+  // (población = 0, o sostenida bajo un umbral) — se priorizan sobre la
+  // lectura de tendencia de fitness de abajo, que es una interpretación.
+  if (last?.extinct) {
+    return (
+      <div className="explanatory-panel">
+        <p>
+          La población se extinguió en la generación {last.generation} (velocidad climática {speedLabel}): no quedan
+          organismos vivos, así que no hay reproducción posible — es un estado del que la corrida no puede
+          recuperarse. Esto es colapso poblacional real, no solo un fitness que dejó de mejorar.
+        </p>
+      </div>
+    );
+  }
+
+  if (last?.nearExtinct) {
+    return (
+      <div className="explanatory-panel">
+        <p>
+          La población lleva varias generaciones consecutivas por debajo de un umbral crítico de la capacidad de la
+          grilla (actualmente {last.populationSize} organismos, velocidad climática {speedLabel}) — deuda de
+          extinción medida directamente en el tamaño de la población, no solo inferida del fitness. Todavía no es
+          extinción total: si la población se recupera por encima del umbral, este estado se revierte.
+        </p>
+      </div>
+    );
+  }
 
   let message: string;
   if (!hasEnoughData) {
