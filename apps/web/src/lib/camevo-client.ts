@@ -1,6 +1,16 @@
-import type { CreateRunRequest, LiveMessage } from "@camevo/shared-types";
+import type { CreateRunRequest, GetRunResponse, ListRunsResponse, LiveMessage } from "@camevo/shared-types";
 
-export type { ClimateChangeSpeed, GenerationSnapshot, LiveMessage, PersistedRunConfig, ResourceSupply } from "@camevo/shared-types";
+export type {
+  ClimateChangeSpeed,
+  GenerationSnapshot,
+  GetRunResponse,
+  ListRunsResponse,
+  LiveMessage,
+  PersistedRunConfig,
+  ResourceSupply,
+  RunMetadata,
+  RunSummary,
+} from "@camevo/shared-types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
@@ -45,4 +55,22 @@ export function connectToRunStream(runId: string, onMessage: (message: LiveMessa
     onMessage(JSON.parse(event.data) as LiveMessage);
   });
   return () => socket.close();
+}
+
+/** RF-025: corridas guardadas más recientes primero, para el selector de comparación histórica. */
+export async function listRuns(limit = 50, offset = 0): Promise<ListRunsResponse> {
+  const res = await fetch(`${API_BASE}/runs?limit=${limit}&offset=${offset}`);
+  if (!res.ok) {
+    throw new Error(`No se pudo listar las corridas guardadas (HTTP ${res.status})`);
+  }
+  return (await res.json()) as ListRunsResponse;
+}
+
+/** RF-025: config + snapshots completos de una corrida ya guardada, para comparación histórica. */
+export async function getRun(id: string): Promise<GetRunResponse> {
+  const res = await fetch(`${API_BASE}/runs/${id}`);
+  if (!res.ok) {
+    throw new Error(`No se pudo cargar la corrida ${id} (HTTP ${res.status})`);
+  }
+  return (await res.json()) as GetRunResponse;
 }

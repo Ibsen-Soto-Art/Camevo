@@ -149,7 +149,7 @@ describe("<App />", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
-    await userEvent.click(screen.getByRole("checkbox", { name: /modo comparación/i }));
+    await userEvent.selectOptions(screen.getByLabelText("Modo"), "live-compare");
 
     expect(screen.getByLabelText(/velocidad climática — corrida a/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/velocidad climática — corrida b/i)).toBeInTheDocument();
@@ -163,5 +163,70 @@ describe("<App />", () => {
 
     expect(await screen.findByText(/run-a/)).toBeInTheDocument();
     expect(await screen.findByText(/run-b/)).toBeInTheDocument();
+  });
+
+  it("comparar corridas guardadas: lista corridas vía GET /runs y carga snapshots vía GET /runs/:id al seleccionar (RF-025)", async () => {
+    const savedRunA = {
+      id: "saved-a",
+      seed: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      config: { climateEnabled: true, climateChangeSpeed: "slow" },
+      endedInExtinction: false,
+      snapshotCount: 3,
+    };
+    const savedRunB = {
+      id: "saved-b",
+      seed: 2,
+      createdAt: "2026-01-02T00:00:00.000Z",
+      config: { climateEnabled: true, climateChangeSpeed: "fast" },
+      endedInExtinction: true,
+      snapshotCount: 5,
+    };
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/runs?")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ runs: [savedRunB, savedRunA], hasMore: false }) });
+      }
+      if (url.endsWith("/runs/saved-a")) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              run: savedRunA,
+              snapshots: [
+                {
+                  generation: 0,
+                  populationSize: 5,
+                  births: 0,
+                  averageFitness: 1,
+                  tasksSolvedThisUpdate: 0,
+                  climate: [],
+                  organisms: [],
+                  geneticDiversity: 0,
+                  extinct: false,
+                  nearExtinct: false,
+                },
+              ],
+            }),
+        });
+      }
+      return Promise.reject(new Error(`URL inesperada en el test: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await userEvent.selectOptions(screen.getByLabelText("Modo"), "saved-compare");
+
+    expect(await screen.findByLabelText(/corrida guardada a/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/semilla 1.*clima slow/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/semilla 2.*clima fast/i).length).toBeGreaterThan(0);
+
+    await userEvent.selectOptions(screen.getByLabelText(/corrida guardada a/i), "saved-a");
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("http://localhost:3001/runs/saved-a"));
+    expect(await screen.findByText(/saved-a/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.querySelectorAll(".status-line")[0]).toHaveTextContent(/estado:\s*done/i);
+    });
   });
 });

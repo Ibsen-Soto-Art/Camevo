@@ -1,5 +1,5 @@
 import type { ClimateChangeSpeed } from "../lib/camevo-client";
-import type { RunHandle } from "../hooks/useRun";
+import type { RunView } from "../hooks/useRun";
 import ExplanatoryPanel from "./ExplanatoryPanel";
 import RunChart from "./RunChart";
 
@@ -7,7 +7,7 @@ export interface RunPanelProps {
   readonly title: string;
   readonly climateEnabled: boolean;
   readonly climateChangeSpeed: ClimateChangeSpeed;
-  readonly run: RunHandle;
+  readonly run: RunView;
   readonly chartHeight?: number;
 }
 

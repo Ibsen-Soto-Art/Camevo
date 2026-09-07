@@ -1,8 +1,17 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import "./App.css";
 import RunPanel from "./components/RunPanel";
+import { useHistoricalRun } from "./hooks/useHistoricalRun";
 import { useRun } from "./hooks/useRun";
-import type { ClimateChangeSpeed, RunFormValues } from "./lib/camevo-client";
+import { listRuns, type ClimateChangeSpeed, type RunFormValues, type RunSummary } from "./lib/camevo-client";
+
+type Mode = "single" | "live-compare" | "saved-compare";
+
+function formatRunSummary(run: RunSummary): string {
+  const when = new Date(run.createdAt).toLocaleString();
+  const outcome = run.endedInExtinction ? "extinta" : "sobrevivió";
+  return `${when} — semilla ${run.seed} — clima ${run.config.climateChangeSpeed} — ${outcome}`;
+}
 
 interface BaseFormValues {
   readonly gridWidth: number;
@@ -37,7 +46,7 @@ function toRunFormValues(base: BaseFormValues, climateChangeSpeed: ClimateChange
 export default function App() {
   const [base, setBase] = useState<BaseFormValues>(DEFAULT_BASE_FORM);
   const [climateEnabled, setClimateEnabled] = useState(true);
-  const [compareMode, setCompareMode] = useState(false);
+  const [mode, setMode] = useState<Mode>("single");
   const [speedSingle, setSpeedSingle] = useState<ClimateChangeSpeed>("moderate");
   const [speedA, setSpeedA] = useState<ClimateChangeSpeed>("slow");
   const [speedB, setSpeedB] = useState<ClimateChangeSpeed>("fast");
@@ -46,14 +55,45 @@ export default function App() {
   const runA = useRun();
   const runB = useRun();
 
+  const compareMode = mode === "live-compare";
+
+  // RF-025: comparación de dos corridas ya guardadas, en vez de dos en vivo.
+  const [savedRuns, setSavedRuns] = useState<RunSummary[]>([]);
+  const [savedRunsError, setSavedRunsError] = useState<string | null>(null);
+  const [savedIdA, setSavedIdA] = useState<string | null>(null);
+  const [savedIdB, setSavedIdB] = useState<string | null>(null);
+  const historicalA = useHistoricalRun(savedIdA);
+  const historicalB = useHistoricalRun(savedIdB);
+
+  useEffect(() => {
+    if (mode !== "saved-compare") {
+      return;
+    }
+    let cancelled = false;
+    listRuns(50, 0)
+      .then((response) => {
+        if (!cancelled) {
+          setSavedRuns(response.runs);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSavedRunsError(error instanceof Error ? error.message : "Error desconocido");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (compareMode) {
+    if (mode === "live-compare") {
       await Promise.all([
         runA.start(toRunFormValues(base, speedA, true)),
         runB.start(toRunFormValues(base, speedB, true)),
       ]);
-    } else {
+    } else if (mode === "single") {
       await runSingle.start(toRunFormValues(base, speedSingle, climateEnabled));
     }
   }
@@ -70,133 +110,173 @@ export default function App() {
 
       <form className="run-form" onSubmit={handleSubmit}>
         <label>
-          Ancho de grilla
-          <input
-            type="number"
-            min={2}
-            max={40}
-            value={base.gridWidth}
-            onChange={(e) => setBase({ ...base, gridWidth: Number(e.target.value) })}
-          />
-        </label>
-        <label>
-          Alto de grilla
-          <input
-            type="number"
-            min={2}
-            max={40}
-            value={base.gridHeight}
-            onChange={(e) => setBase({ ...base, gridHeight: Number(e.target.value) })}
-          />
-        </label>
-        <label>
-          Tasa de mutación
-          <input
-            type="number"
-            min={0}
-            max={1}
-            step={0.01}
-            value={base.mutationRate}
-            onChange={(e) => setBase({ ...base, mutationRate: Number(e.target.value) })}
-          />
-        </label>
-        <label>
-          Generaciones
-          <input
-            type="number"
-            min={1}
-            max={5000}
-            value={base.updates}
-            onChange={(e) => setBase({ ...base, updates: Number(e.target.value) })}
-          />
-        </label>
-        <label>
-          Colocación de la cría
-          <select
-            value={base.placementMode}
-            onChange={(e) => setBase({ ...base, placementMode: e.target.value as BaseFormValues["placementMode"] })}
-          >
-            <option value="near-parent">Cerca del padre</option>
-            <option value="random">Aleatoria</option>
+          Modo
+          <select value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
+            <option value="single">Una corrida</option>
+            <option value="live-compare">Comparar dos corridas nuevas (en vivo)</option>
+            <option value="saved-compare">Comparar dos corridas guardadas</option>
           </select>
         </label>
-        <label>
-          Repetibilidad
-          <select
-            value={base.reproducibilityMode}
-            onChange={(e) => setBase({ ...base, reproducibilityMode: e.target.value as BaseFormValues["reproducibilityMode"] })}
-          >
-            <option value="reproducible">Reproducible</option>
-            <option value="experimental">Experimental</option>
-          </select>
-        </label>
-        <label>
-          Intensidad/varianza climática
-          <input
-            type="number"
-            min={0}
-            max={0.5}
-            step={0.01}
-            value={base.climateVarianceAmplitude}
-            onChange={(e) => setBase({ ...base, climateVarianceAmplitude: Number(e.target.value) })}
-          />
-        </label>
 
-        <label className="checkbox">
-          <input type="checkbox" checked={compareMode} onChange={(e) => setCompareMode(e.target.checked)} />
-          Modo comparación (2 corridas en paralelo)
-        </label>
-
-        {!compareMode && (
+        {mode !== "saved-compare" && (
           <>
-            <label className="checkbox">
-              <input type="checkbox" checked={climateEnabled} onChange={(e) => setClimateEnabled(e.target.checked)} />
-              Módulo climático activo
+            <label>
+              Ancho de grilla
+              <input
+                type="number"
+                min={2}
+                max={40}
+                value={base.gridWidth}
+                onChange={(e) => setBase({ ...base, gridWidth: Number(e.target.value) })}
+              />
             </label>
             <label>
-              Velocidad del cambio climático
-              <select value={speedSingle} onChange={(e) => setSpeedSingle(e.target.value as ClimateChangeSpeed)} disabled={!climateEnabled}>
-                {SPEED_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
+              Alto de grilla
+              <input
+                type="number"
+                min={2}
+                max={40}
+                value={base.gridHeight}
+                onChange={(e) => setBase({ ...base, gridHeight: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              Tasa de mutación
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={base.mutationRate}
+                onChange={(e) => setBase({ ...base, mutationRate: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              Generaciones
+              <input
+                type="number"
+                min={1}
+                max={5000}
+                value={base.updates}
+                onChange={(e) => setBase({ ...base, updates: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              Colocación de la cría
+              <select
+                value={base.placementMode}
+                onChange={(e) => setBase({ ...base, placementMode: e.target.value as BaseFormValues["placementMode"] })}
+              >
+                <option value="near-parent">Cerca del padre</option>
+                <option value="random">Aleatoria</option>
+              </select>
+            </label>
+            <label>
+              Repetibilidad
+              <select
+                value={base.reproducibilityMode}
+                onChange={(e) => setBase({ ...base, reproducibilityMode: e.target.value as BaseFormValues["reproducibilityMode"] })}
+              >
+                <option value="reproducible">Reproducible</option>
+                <option value="experimental">Experimental</option>
+              </select>
+            </label>
+            <label>
+              Intensidad/varianza climática
+              <input
+                type="number"
+                min={0}
+                max={0.5}
+                step={0.01}
+                value={base.climateVarianceAmplitude}
+                onChange={(e) => setBase({ ...base, climateVarianceAmplitude: Number(e.target.value) })}
+              />
+            </label>
+
+            {mode === "single" && (
+              <>
+                <label className="checkbox">
+                  <input type="checkbox" checked={climateEnabled} onChange={(e) => setClimateEnabled(e.target.checked)} />
+                  Módulo climático activo
+                </label>
+                <label>
+                  Velocidad del cambio climático
+                  <select
+                    value={speedSingle}
+                    onChange={(e) => setSpeedSingle(e.target.value as ClimateChangeSpeed)}
+                    disabled={!climateEnabled}
+                  >
+                    {SPEED_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+
+            {mode === "live-compare" && (
+              <>
+                <label>
+                  Velocidad climática — Corrida A
+                  <select value={speedA} onChange={(e) => setSpeedA(e.target.value as ClimateChangeSpeed)}>
+                    {SPEED_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Velocidad climática — Corrida B
+                  <select value={speedB} onChange={(e) => setSpeedB(e.target.value as ClimateChangeSpeed)}>
+                    {SPEED_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+
+            <button type="submit" disabled={running}>
+              {running ? "Corriendo…" : compareMode ? "Iniciar ambas corridas" : "Iniciar corrida"}
+            </button>
+          </>
+        )}
+
+        {mode === "saved-compare" && (
+          <>
+            {savedRunsError && <p className="error">{savedRunsError}</p>}
+            <label>
+              Corrida guardada A
+              <select value={savedIdA ?? ""} onChange={(e) => setSavedIdA(e.target.value || null)}>
+                <option value="">— seleccionar —</option>
+                {savedRuns.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    {formatRunSummary(run)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Corrida guardada B
+              <select value={savedIdB ?? ""} onChange={(e) => setSavedIdB(e.target.value || null)}>
+                <option value="">— seleccionar —</option>
+                {savedRuns.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    {formatRunSummary(run)}
                   </option>
                 ))}
               </select>
             </label>
           </>
         )}
-
-        {compareMode && (
-          <>
-            <label>
-              Velocidad climática — Corrida A
-              <select value={speedA} onChange={(e) => setSpeedA(e.target.value as ClimateChangeSpeed)}>
-                {SPEED_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Velocidad climática — Corrida B
-              <select value={speedB} onChange={(e) => setSpeedB(e.target.value as ClimateChangeSpeed)}>
-                {SPEED_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        )}
-
-        <button type="submit" disabled={running}>
-          {running ? "Corriendo…" : compareMode ? "Iniciar ambas corridas" : "Iniciar corrida"}
-        </button>
       </form>
 
-      {compareMode ? (
+      {mode === "live-compare" && (
         <div className="compare-grid">
           <RunPanel
             title={`Corrida A — velocidad ${speedA}`}
@@ -213,7 +293,28 @@ export default function App() {
             chartHeight={320}
           />
         </div>
-      ) : (
+      )}
+
+      {mode === "saved-compare" && (
+        <div className="compare-grid">
+          <RunPanel
+            title="Corrida guardada A"
+            climateEnabled={historicalA.config?.climateEnabled ?? false}
+            climateChangeSpeed={historicalA.config?.climateChangeSpeed ?? "moderate"}
+            run={historicalA.view}
+            chartHeight={320}
+          />
+          <RunPanel
+            title="Corrida guardada B"
+            climateEnabled={historicalB.config?.climateEnabled ?? false}
+            climateChangeSpeed={historicalB.config?.climateChangeSpeed ?? "moderate"}
+            run={historicalB.view}
+            chartHeight={320}
+          />
+        </div>
+      )}
+
+      {mode === "single" && (
         <RunPanel title="Corrida" climateEnabled={climateEnabled} climateChangeSpeed={speedSingle} run={runSingle} />
       )}
     </main>

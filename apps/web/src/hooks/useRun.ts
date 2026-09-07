@@ -3,11 +3,21 @@ import { connectToRunStream, createRun, type GenerationSnapshot, type RunFormVal
 
 export type RunStatus = "idle" | "running" | "done" | "error";
 
-export interface RunHandle {
+/**
+ * Forma mínima que necesita RunPanel para renderizar una corrida — sin el
+ * método `start`, que solo tiene sentido para una corrida en vivo. RF-025:
+ * useHistoricalRun expone esta misma forma (con status ya en "done" desde
+ * el primer render) para reusar RunPanel/ExplanatoryPanel sin duplicar la
+ * lógica de narración entre comparación en vivo e histórica.
+ */
+export interface RunView {
   readonly status: RunStatus;
   readonly runId: string | null;
   readonly snapshots: readonly GenerationSnapshot[];
   readonly errorMessage: string | null;
+}
+
+export interface RunHandle extends RunView {
   readonly start: (values: RunFormValues) => Promise<void>;
 }
 
