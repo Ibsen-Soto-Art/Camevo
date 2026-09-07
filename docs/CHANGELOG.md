@@ -6,6 +6,22 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.10.2] — Nota de cierre de Fase 4 en el roadmap
+
+**Documentos afectados:** `04-roadmap-fases.md` (v1.2 → v1.3)
+
+### Added
+- Sección "Fase 4": nota de cierre con RFs cubiertos (RF-014, RF-015 activos solo en
+  "Rápida"; RF-018 no implementado), el hallazgo de aislamiento de mecanismos (ningún
+  mecanismo por separado produce extinción; solo la combinación), y la conexión con deuda
+  de extinción vía la comparación con/sin capacidad adaptativa de partida.
+
+**Motivo:** igual que v0.9.1 — el cierre de fase (v0.10.0) no tuvo cambio de documento
+en sí mismo ("Documentos afectados: ninguno"), pero la nota de cierre agregada a
+04-roadmap-fases.md sí es un cambio de contenido real que merece su propio registro.
+
+---
+
 ## [v0.10.1] — Corrección de la convención de versionado: MAJOR es el primer despliegue real
 
 **Documentos afectados:** `CHANGELOG.md` (esta misma convención de versionado, sección final)
@@ -247,8 +263,10 @@ Fase 4, y las que sigan) se registran como MINOR aunque esa fase, por sí sola, 
 cambiado ningún documento — "Documentos afectados: ninguno" en esos casos es intencional,
 no un error. Esto se mantiene así hasta el primer despliegue real en producción (fin de la
 Fase 5), momento en el que corresponde el primer MAJOR (v1.0.0). Las aclaraciones de
-alcance reales que una fase sí produce (si las produce) se registran como entradas PATCH
-separadas dentro del mismo MINOR (p. ej. v0.8.1 en la Fase 2, v0.8.2 en la Fase 3; v0.10.1
-en la Fase 4 — aunque en este caso corrigiendo esta misma convención, no un requisito).
+alcance reales que una fase sí produce (si las produce) — o notas de cierre agregadas al
+roadmap después del cierre en sí (p. ej. v0.9.1, v0.10.2) — se registran como entradas
+PATCH separadas dentro del mismo MINOR (p. ej. v0.8.1 en la Fase 2, v0.8.2 en la Fase 3;
+v0.10.1 en la Fase 4 — aunque en este caso corrigiendo esta misma convención, no un
+requisito).
 
 Cada documento individual mantiene además su propio número de versión en el encabezado (ej. "Versión 1.1"), que se incrementa cuando ese documento específico cambia.
