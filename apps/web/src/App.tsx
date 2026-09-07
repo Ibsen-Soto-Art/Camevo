@@ -58,7 +58,7 @@ export default function App() {
   const compareMode = mode === "live-compare";
 
   // RF-025: comparación de dos corridas ya guardadas, en vez de dos en vivo.
-  const [savedRuns, setSavedRuns] = useState<RunSummary[]>([]);
+  const [savedRuns, setSavedRuns] = useState<readonly RunSummary[]>([]);
   const [savedRunsError, setSavedRunsError] = useState<string | null>(null);
   const [savedIdA, setSavedIdA] = useState<string | null>(null);
   const [savedIdB, setSavedIdB] = useState<string | null>(null);
