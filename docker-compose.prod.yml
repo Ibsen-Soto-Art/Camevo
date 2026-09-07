@@ -1,0 +1,74 @@
+# Stack de producción — usado en el VPS Hetzner detrás de un Nginx del
+# HOST (ver deploy/nginx/camevo.conf), no contenedorizado: ese Nginx ya
+# atiende otros dominios en la misma máquina.
+#
+# Diferencias deliberadas contra docker-compose.yml (desarrollo):
+#   - Sin defaults para credenciales (`${VAR:?...}` en vez de `${VAR:-camevo}`):
+#     un .env de producción sin POSTGRES_PASSWORD real falla al arrancar en
+#     vez de exponer la base con la contraseña de desarrollo.
+#   - camevo-db NO publica su puerto al host: solo camevo-api lo alcanza,
+#     por nombre de servicio, dentro de la red interna de Docker.
+#   - camevo-api/camevo-web publican en 127.0.0.1 únicamente — el Nginx del
+#     host es el único punto de entrada público (80/443); los contenedores
+#     nunca quedan expuestos directamente a Internet.
+#   - Volumen `camevo-prod-db-data`, no `camevo-db-data`: Docker Compose
+#     namespacea los volúmenes por directorio de proyecto, no por archivo
+#     compose — con el mismo nombre que docker-compose.yml, levantar este
+#     archivo en la misma máquina/directorio que el de desarrollo apunta
+#     silenciosamente a los MISMOS datos (y a la contraseña ya inicializada
+#     ahí, ignorando la nueva). Confirmado al validar este archivo
+#     localmente antes de desplegar — ver deploy/README.md.
+services:
+  camevo-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?falta POSTGRES_USER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: ${POSTGRES_DB:?falta POSTGRES_DB en .env}
+    volumes:
+      - camevo-prod-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - camevo-internal
+
+  camevo-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: camevo-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?falta DATABASE_URL en .env (debe apuntar a camevo-db, no localhost)}
+      API_PORT: ${API_PORT:-3001}
+      CORS_ORIGIN: ${CORS_ORIGIN:?falta CORS_ORIGIN en .env (p. ej. https://camevo.ibsen-soto.pro)}
+    depends_on:
+      camevo-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_PORT:-3001}:${API_PORT:-3001}"
+    networks:
+      - camevo-internal
+
+  camevo-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:?falta VITE_API_URL en .env (p. ej. https://camevo.ibsen-soto.pro)}
+    container_name: camevo-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8090}:80"
+    networks:
+      - camevo-internal
+
+networks:
+  camevo-internal:
+
+volumes:
+  camevo-prod-db-data:
