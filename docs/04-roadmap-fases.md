@@ -1,6 +1,6 @@
 # CAMEVO — Roadmap por Fases
 
-**Versión 1.3 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.4 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un proyecto de aprendizaje construido de forma incremental. Cada fase tiene entregables verificables antes de avanzar a la siguiente.
 
@@ -78,10 +78,12 @@ El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un
 **Este es el hito que valida la tesis completa del proyecto.**
 
 **Estado: ✅ Cerrada.**
-- RFs cubiertos: RF-012, RF-013, RF-021, RF-025 (parcial — corridas nuevas en paralelo; sin comparar corridas históricas ya guardadas), RF-026.
+- RFs cubiertos: RF-012, RF-013, RF-021, RF-025 (parcial al cierre de esta fase — corridas nuevas en paralelo; sin comparar corridas históricas ya guardadas; cerrado por completo antes de la Fase 5, ver nota más abajo), RF-026.
 - Hallazgo relevante: con los multiplicadores de `climate/policy` heredados de la Fase 2 (techo 4×-8×), el efecto de la velocidad climática resultó estadísticamente invisible — el bono de CPU por tarea resuelta era ~0.05%-0.1% del total de ciclos que la población consume replicándose, sin importar el período configurado. Corregido subiendo el techo a 16 (el nivel "muy difícil" que ya define RF-006) y sembrando un ancestro pre-adaptado (RF-008) junto al ancestro `replicate` puro de siempre.
 - Aclaración importante de lo que el demo prueba: al sembrar un ancestro ya adaptado, la Fase 3 demuestra selección sobre variación genética *en pie* (standing genetic variation), no una mutación nueva apareciendo en tiempo real bajo presión climática — ver `01-vision-general.md` §9.
-- Deuda técnica pendiente: RF-025 no compara corridas históricas ya guardadas; no existe mecanismo de colapso poblacional real (solo estancamiento de fitness) — eso es RF-014/RF-015 de la Fase 4.
+- Deuda técnica dejada pendiente al cierre (resuelta antes de la Fase 5, ver nota abajo): RF-025 no comparaba corridas históricas ya guardadas; no existe mecanismo de colapso poblacional real (solo estancamiento de fitness) — eso es RF-014/RF-015 de la Fase 4.
+
+> **RF-025 cerrado por completo (antes de la Fase 5):** se agregó `GET /runs` (listado paginado de corridas guardadas, más recientes primero, con `endedInExtinction`/`snapshotCount` derivados de sus snapshots) y un tercer modo en el frontend ("Comparar corridas guardadas") que reusa el mismo layout/componentes (`RunPanel`/`ExplanatoryPanel`) que la comparación en vivo, vía un nuevo hook `useHistoricalRun` que carga config+snapshots de una corrida ya guardada en una sola pasada (`GET /runs/:id`). Antes de implementar, se confirmó con un test (no de memoria) que `ExplanatoryPanel` narra correctamente extinción/cuasi-extinción/rescate evolutivo cuando recibe el array completo de snapshots de una sola vez, sin depender del streaming evento-a-evento — es una función pura de `snapshots`, sin estado acumulado propio, así que no hizo falta ajustar esa lógica. Decisión de tipos: `GetRunResponse.run` (identidad+config) deliberadamente NO incluye `endedInExtinction`/`snapshotCount` para no crear una segunda fuente de verdad junto a `snapshots.at(-1)`; esos dos campos solo viven en `RunSummary` (la entrada de `GET /runs`), donde sí hacen falta porque ahí no viaja el array completo. Verificado además a mano contra un navegador real (Playwright ad-hoc, no parte de la suite permanente) sirviendo dos corridas reales completadas contra Postgres.
 
 ---
 

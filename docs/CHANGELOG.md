@@ -6,6 +6,26 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.11.0] — RF-025 completo: comparación de corridas guardadas
+
+**Documentos afectados:** `04-roadmap-fases.md` (v1.3 → v1.4 — nota de cierre de Fase 3
+actualizada: RF-025 ya no figura como parcial)
+
+### Changed
+- RF-025 completado: además de comparar corridas nuevas en paralelo (Fase 3), ahora se
+  pueden comparar dos corridas ya guardadas del historial, lado a lado, reutilizando el
+  mismo RunPanel/ExplanatoryPanel sin modificarlos (vía un tipo RunView compartido entre
+  useRun y el nuevo useHistoricalRun).
+- Nuevo endpoint GET /runs (listado paginado) y tipos RunMetadata/RunSummary/
+  GetRunResponse en shared-types — GetRunResponse.run deliberadamente sin
+  endedInExtinction/snapshotCount para no crear una segunda fuente de verdad junto a
+  snapshots.at(-1).extinct.
+
+**Motivo:** cerrar la deuda que RF-025 arrastraba desde el cierre de la Fase 3 (v0.9.0),
+antes de empezar la Fase 5.
+
+---
+
 ## [v0.10.2] — Nota de cierre de Fase 4 en el roadmap
 
 **Documentos afectados:** `04-roadmap-fases.md` (v1.2 → v1.3)
