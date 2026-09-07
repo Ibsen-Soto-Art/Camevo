@@ -4,6 +4,16 @@ Runbook para el VPS Hetzner (87.99.137.199) donde ya corren otros
 proyectos con su propio Nginx del sistema. Camevo se agrega como un
 dominio más, sin tocar los demás.
 
+## 0. Antes de empezar
+
+- **DNS**: confirmar que `camevo.ibsen-soto.pro` ya resuelve a
+  `87.99.137.199` (`dig +short camevo.ibsen-soto.pro`) — si no, la
+  validación HTTP-01 de Certbot (paso 4) falla sin importar que Nginx
+  esté bien configurado.
+- **Firewall**: si el VPS usa `ufw` o un firewall de Hetzner Cloud,
+  confirmar que 80/443 ya están abiertos (probablemente sí, dado que
+  sirve otros dominios) — si no, abrir esos puertos antes del paso 3.
+
 ## 1. Preparar el `.env` de producción
 
 En el servidor, dentro del checkout del repo:
@@ -76,6 +86,19 @@ Nginx solo si de verdad se renovó algo):
 - Flujo completo contra el dominio real: crear una corrida, verla
   evolucionar en vivo (WebSocket a través del proxy), y comparar dos
   corridas guardadas (RF-025).
+
+## Actualizar después de un cambio
+
+```
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Reconstruye solo lo que cambió (Docker cachea capas); `camevo-db` no se
+reinicia si su definición no cambió, así que los datos persisten sin
+downtime de la base. Si cambia `deploy/nginx/camevo.conf`, copiarlo de
+nuevo a `/etc/nginx/sites-available/camevo.conf` y `nginx -t && systemctl
+reload nginx` — Docker Compose no toca esa parte.
 
 ## Diferencias clave entre desarrollo y producción
 
