@@ -60,7 +60,16 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
       snapshot({ generation: 4, populationSize: 0, averageFitness: 0, extinct: true }),
     ];
 
-    render(<RunPanel title="Corrida histórica" climateEnabled climateChangeSpeed="fast" run={historicalRunHandle(snapshots)} />);
+    render(
+      <RunPanel
+        title="Corrida histórica"
+        climateEnabled
+        climateChangeSpeed="fast"
+        run={historicalRunHandle(snapshots)}
+        gridWidth={10}
+        gridHeight={10}
+      />,
+    );
 
     expect(screen.getByText(/se extinguió en la generación 4/i)).toBeInTheDocument();
     expect(screen.getByText(/deuda de extinción/i)).toBeInTheDocument();
@@ -73,7 +82,16 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
       snapshot({ generation: 2, populationSize: 5, nearExtinct: true }),
     ];
 
-    render(<RunPanel title="Corrida histórica" climateEnabled climateChangeSpeed="fast" run={historicalRunHandle(snapshots)} />);
+    render(
+      <RunPanel
+        title="Corrida histórica"
+        climateEnabled
+        climateChangeSpeed="fast"
+        run={historicalRunHandle(snapshots)}
+        gridWidth={10}
+        gridHeight={10}
+      />,
+    );
 
     expect(screen.getByText(/5 organismos/)).toBeInTheDocument();
     expect(screen.getByText(/todavía no es\s*extinción total/i)).toBeInTheDocument();
@@ -91,7 +109,16 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
       snapshot({ generation: 7, averageFitness: 2 }),
     ];
 
-    render(<RunPanel title="Corrida histórica" climateEnabled climateChangeSpeed="slow" run={historicalRunHandle(snapshots)} />);
+    render(
+      <RunPanel
+        title="Corrida histórica"
+        climateEnabled
+        climateChangeSpeed="slow"
+        run={historicalRunHandle(snapshots)}
+        gridWidth={10}
+        gridHeight={10}
+      />,
+    );
 
     expect(screen.getAllByText(/rescate evolutivo/i).length).toBeGreaterThan(0);
     expect(document.querySelector(".status-line")).toHaveTextContent(/estado:\s*done/i);

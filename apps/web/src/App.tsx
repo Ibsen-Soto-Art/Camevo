@@ -336,6 +336,8 @@ export default function App() {
               climateEnabled
               climateChangeSpeed={speedA}
               run={runA}
+              gridWidth={base.gridWidth}
+              gridHeight={base.gridHeight}
               chartHeight={320}
             />
             <PlaybackControls run={runA} initialSpeed={base.msPerGeneration} />
@@ -346,6 +348,8 @@ export default function App() {
               climateEnabled
               climateChangeSpeed={speedB}
               run={runB}
+              gridWidth={base.gridWidth}
+              gridHeight={base.gridHeight}
               chartHeight={320}
             />
             <PlaybackControls run={runB} initialSpeed={base.msPerGeneration} />
@@ -360,6 +364,8 @@ export default function App() {
             climateEnabled={historicalA.config?.climateEnabled ?? false}
             climateChangeSpeed={historicalA.config?.climateChangeSpeed ?? "moderate"}
             run={historicalA.view}
+            gridWidth={historicalA.config?.gridWidth ?? DEFAULT_BASE_FORM.gridWidth}
+            gridHeight={historicalA.config?.gridHeight ?? DEFAULT_BASE_FORM.gridHeight}
             chartHeight={320}
           />
           <RunPanel
@@ -367,6 +373,8 @@ export default function App() {
             climateEnabled={historicalB.config?.climateEnabled ?? false}
             climateChangeSpeed={historicalB.config?.climateChangeSpeed ?? "moderate"}
             run={historicalB.view}
+            gridWidth={historicalB.config?.gridWidth ?? DEFAULT_BASE_FORM.gridWidth}
+            gridHeight={historicalB.config?.gridHeight ?? DEFAULT_BASE_FORM.gridHeight}
             chartHeight={320}
           />
         </div>
@@ -374,7 +382,14 @@ export default function App() {
 
       {mode === "single" && (
         <div key={runSingle.runId ?? "single"}>
-          <RunPanel title="Corrida" climateEnabled={climateEnabled} climateChangeSpeed={speedSingle} run={runSingle} />
+          <RunPanel
+            title="Corrida"
+            climateEnabled={climateEnabled}
+            climateChangeSpeed={speedSingle}
+            run={runSingle}
+            gridWidth={base.gridWidth}
+            gridHeight={base.gridHeight}
+          />
           <PlaybackControls run={runSingle} initialSpeed={base.msPerGeneration} />
         </div>
       )}

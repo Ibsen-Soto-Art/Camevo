@@ -106,3 +106,21 @@
   font-size: 0.78rem;
   line-height: 1.35;
 }
+
+.population-grid {
+  margin-top: 1rem;
+}
+
+.population-grid canvas {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.population-grid-caption {
+  margin-top: 0.4rem;
+  color: #777;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
