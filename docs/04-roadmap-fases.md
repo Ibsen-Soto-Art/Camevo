@@ -1,6 +1,6 @@
 # CAMEVO — Roadmap por Fases
 
-**Versión 1.4 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.5 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un proyecto de aprendizaje construido de forma incremental. Cada fase tiene entregables verificables antes de avanzar a la siguiente.
 
@@ -143,3 +143,29 @@ El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un
 - Escenarios preconfigurados con narrativa ("¿Qué pasaría si el cambio fuera tan rápido como el observado desde 1980?").
 - Modo comparación guiada (side-by-side) como experiencia principal, no solo como opción avanzada.
 - Exportación de resultados (RF-032) para quien quiera analizar los datos por fuera de la plataforma.
+
+---
+
+### Deuda de alcance cerrada fuera de fase
+
+RF-023 (control de la simulación: iniciar, pausar, ajustar velocidad de
+reproducción y reiniciar — prioridad **M**, MVP) no pertenece a ninguna
+fase numerada de este roadmap: es un requisito transversal de la Fase 0
+que ninguna fase posterior reclamó explícitamente como propio. Por eso
+pudo pasar sin implementarse durante cinco cierres de fase seguidos
+(Fases 1 a 5) sin que ningún reporte de cierre lo detectara — cada
+cierre listaba los RFs que SÍ tocaba esa fase, y RF-023 nunca apareció
+en ninguna lista, ni como cubierto ni como pendiente.
+
+Cerrado por completo mediante una auditoría dedicada, no como parte de
+una fase: `iniciar` ya existía; `pausar` no existía en ningún nivel (el
+WebSocket de `/runs/:id/stream` era unidireccional, sin ningún mensaje
+cliente→servidor); `ajustar velocidad de reproducción` tampoco existía
+(el ritmo entre snapshots estaba hardcodeado en el servidor, sin
+exponerse al cliente); `reiniciar` funcionaba solo por accidente de que
+el formulario era reenviable, sin ninguna señal en la UI de que eso era
+lo que hacía. Ver `02-requisitos.md` (nota de cierre junto a RF-023)
+para el detalle de la implementación — en particular la garantía de que
+pausar congela el motor de verdad (`advanceGeneration` no avanza
+mientras está pausado), no solo el envío, para no introducir una fuente
+de no-determinismo nueva y romper RNF-003.

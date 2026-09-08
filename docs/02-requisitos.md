@@ -1,6 +1,6 @@
 # CAMEVO — Especificación de Requisitos
 
-**Versión 1.1 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.2 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` para no funcionales. Prioridad: **M** (Must — MVP), **S** (Should — fase 2/3), **C** (Could — fase 4+).
 
@@ -57,6 +57,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 | RF-027 | El sistema debe permitir seleccionar un organismo individual de la grilla y visualizar su genoma, las tareas lógicas que resuelve y su fitness individual. | S |
 
 > **Nota de origen:** RF-027 se incorporó tras revisar Avida-ED, que ofrece una vista de "Organismo" independiente de la vista de "Población". Complementa las métricas agregadas (RF-020/RF-021) con evidencia concreta a nivel individual, útil para el público estudiantil (RF-026, audiencia objetivo).
+
+> **Nota de cierre:** RF-023 quedó completo tras una auditoría dedicada (fuera de cualquier fase numerada, ver `04-roadmap-fases.md`, "Deuda de alcance cerrada fuera de fase"). Cerró tres huecos reales: pausar (con congelamiento real del motor — `advanceGeneration` no avanza mientras está pausado, para no romper RNF-003), `msPerGeneration` configurable al arrancar y ajustable en vivo, y un botón de reinicio explícito (antes solo funcionaba reenviando el formulario, sin ninguna señal de que eso era lo que hacía).
 
 ### 1.4 Persistencia
 

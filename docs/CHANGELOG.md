@@ -6,6 +6,29 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.12.0] — RF-023 completo: pausar, ritmo de reproducción y reiniciar
+
+**Documentos afectados:** `02-requisitos.md` (v1.1 → v1.2 — nota de cierre junto a RF-023) y
+`04-roadmap-fases.md` (v1.4 → v1.5 — nueva sección "Deuda de alcance cerrada fuera de fase")
+
+### Changed
+- RF-023 completado: pausar (con congelamiento real del motor — `advanceGeneration` no
+  avanza mientras está pausado, para no introducir una fuente de no-determinismo nueva y
+  romper RNF-003), `msPerGeneration` configurable al iniciar y ajustable en vivo sobre el
+  mismo WebSocket ya abierto (`ControlMessage`, protocolo cliente→servidor nuevo), y un
+  botón de reinicio explícito (antes solo funcionaba por accidente de que el formulario
+  era reenviable, sin ninguna señal de que eso era lo que hacía).
+
+**Motivo:** una auditoría de código (no de memoria) detectó que RF-023, prioridad **M**
+(MVP) desde la Fase 0, nunca se declaró completo ni parcial en ningún cierre de fase —
+Fases 1 a 5 lo pasaron por alto porque es un requisito transversal que ninguna fase
+numerada reclamó como propio. Se cierra fuera de cualquier fase, antes de continuar con la
+siguiente serie de mejoras de interfaz (etiquetas de ejes, grilla poblacional estilo
+Avida-ED, marcadores de eventos catastróficos, visibilidad de ancestros múltiples,
+rediseño responsive).
+
+---
+
 ## [v0.11.0] — RF-025 completo: comparación de corridas guardadas
 
 **Documentos afectados:** `04-roadmap-fases.md` (v1.3 → v1.4 — nota de cierre de Fase 3
