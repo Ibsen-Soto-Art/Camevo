@@ -57,11 +57,26 @@ export interface GenerationSnapshot {
   readonly nearExtinct: boolean;
 }
 
-/** Mensajes que viaja por api/ws (`/runs/:id/stream`). */
+/** Mensajes que viaja por api/ws (`/runs/:id/stream`), servidor → cliente. */
 export type LiveMessage =
   | { readonly type: "snapshot"; readonly snapshot: GenerationSnapshot }
   | { readonly type: "done" }
   | { readonly type: "error"; readonly message: string };
+
+/**
+ * RF-023: mensajes de control, cliente → servidor, sobre el mismo WS ya
+ * abierto de `/runs/:id/stream`. `setSpeed` solo cambia el *ritmo* de
+ * transmisión (`msPerGeneration`) — no afecta el motor ni el resultado
+ * de la simulación, así que no rompe RNF-003. `pause` sí congela el
+ * motor: mientras está en pausa, el servidor no llama a
+ * `advanceGeneration` en absoluto (ver api/ws/playback-control.ts), no
+ * solo deja de transmitir — el tiempo real que el usuario pase en pausa
+ * nunca afecta el resultado final.
+ */
+export type ControlMessage =
+  | { readonly type: "pause" }
+  | { readonly type: "resume" }
+  | { readonly type: "setSpeed"; readonly msPerGeneration: number };
 
 /** Body de `POST /runs`. Todos los campos son opcionales: el servidor aplica defaults. */
 export interface CreateRunRequest {
@@ -79,6 +94,15 @@ export interface CreateRunRequest {
   readonly climateChangeSpeed?: ClimateChangeSpeed;
   /** RF-013: 0-0.5 aprox., independiente de climateChangeSpeed. */
   readonly climateVarianceAmplitude?: number;
+  /**
+   * RF-023: ritmo inicial de reproducción (ms entre snapshots
+   * transmitidos), ajustable después en curso vía `ControlMessage`
+   * ("setSpeed"). Puramente de presentación — nunca entra al fingerprint
+   * de la semilla (config-request.ts) ni a `SimulationConfig`: dos
+   * corridas con esto distinto y todo lo demás igual son la misma
+   * corrida en modo reproducible.
+   */
+  readonly msPerGeneration?: number;
 }
 
 /**

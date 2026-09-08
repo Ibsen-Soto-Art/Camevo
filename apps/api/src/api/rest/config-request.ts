@@ -31,6 +31,11 @@ const LIMITS: readonly NumericLimit[] = [
   { field: "ancestorGenomeLength", min: 1, max: 200 },
   { field: "numAncestors", min: 1, max: 20 },
   { field: "climateVarianceAmplitude", min: 0, max: 0.5 },
+  // RF-023: puramente de presentación (ver comentario en shared-types),
+  // pero igual se valida por RNF-008 — un valor negativo rompería
+  // setTimeout, uno absurdamente alto (además de inútil) mantendría el
+  // socket abierto sin necesidad durante horas.
+  { field: "msPerGeneration", min: 0, max: 5000 },
 ];
 
 const DEFAULTS = {
@@ -46,6 +51,7 @@ const DEFAULTS = {
   climateEnabled: true,
   climateChangeSpeed: "moderate" as ClimateChangeSpeed,
   climateVarianceAmplitude: 0.15,
+  msPerGeneration: 80,
 };
 
 function validationErrors(body: CreateRunRequestBody): string[] {
@@ -121,11 +127,16 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
   const climateEnabled = (body.climateEnabled as boolean | undefined) ?? DEFAULTS.climateEnabled;
   const climateChangeSpeed = (body.climateChangeSpeed as ClimateChangeSpeed | undefined) ?? DEFAULTS.climateChangeSpeed;
   const climateVarianceAmplitude = (body.climateVarianceAmplitude as number | undefined) ?? DEFAULTS.climateVarianceAmplitude;
+  const msPerGeneration = (body.msPerGeneration as number | undefined) ?? DEFAULTS.msPerGeneration;
 
   if (numAncestors > gridWidth * gridHeight) {
     return { errors: ["numAncestors no puede superar el tamaño de la grilla (gridWidth * gridHeight)"] };
   }
 
+  // msPerGeneration deliberadamente FUERA del fingerprint: es puramente de
+  // presentación (RF-023, ver shared-types) y no debe cambiar la semilla
+  // en modo reproducible — dos corridas idénticas salvo el ritmo de
+  // reproducción son, a efectos de RNF-003, la misma corrida.
   const fingerprint = JSON.stringify({
     gridWidth,
     gridHeight,
@@ -154,6 +165,7 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
     climateEnabled,
     climateChangeSpeed,
     climateVarianceAmplitude,
+    msPerGeneration,
     seed,
   };
 

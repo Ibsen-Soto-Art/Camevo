@@ -2,6 +2,7 @@ import type { LiveMessage } from "@camevo/shared-types";
 import type { WebSocket } from "ws";
 import { RunRepository } from "../../persistence/repository/types";
 import { SimulationConfig, advanceGeneration, createSimulationState } from "../../simulation/orchestrator/run";
+import { PlaybackControl } from "./playback-control";
 
 export type { LiveMessage };
 
@@ -27,13 +28,19 @@ function sleep(ms: number): Promise<void> {
  * cierra igual con el mensaje "done" normal: la razón del corte ya es
  * explícita en el último snapshot recibido (`extinct: true`), no hace
  * falta un tipo de mensaje aparte.
+ *
+ * RF-023: `control.waitIfPaused()` se consulta ANTES de llamar a
+ * `advanceGeneration` en cada vuelta — mientras está pausado, el motor
+ * literalmente no avanza (ver playback-control.ts para la garantía de
+ * determinismo). El chequeo de `closed` se repite después de esperar,
+ * por si el socket se cerró mientras estaba pausado.
  */
 export async function streamRunLive(
   runId: string,
   config: SimulationConfig,
   repository: RunRepository,
   socket: WebSocket,
-  msPerGeneration = 80,
+  control: PlaybackControl,
 ): Promise<void> {
   let closed = false;
   socket.on("close", () => {
@@ -43,6 +50,9 @@ export async function streamRunLive(
   const state = createSimulationState(config);
 
   for (let i = 0; i < config.updates && !closed; i++) {
+    await control.waitIfPaused();
+    if (closed) break;
+
     const snapshot = advanceGeneration(state);
     await repository.saveSnapshot(runId, snapshot.generation, snapshot as unknown as Record<string, unknown>);
 
@@ -53,7 +63,7 @@ export async function streamRunLive(
 
     if (snapshot.extinct) break;
 
-    await sleep(msPerGeneration);
+    await sleep(control.msPerGeneration);
   }
 
   if (!closed && socket.readyState === socket.OPEN) {
