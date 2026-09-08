@@ -55,6 +55,15 @@ export interface GenerationSnapshot {
    * población se recupera por encima del umbral, vuelve a `false`.
    */
   readonly nearExtinct: boolean;
+  /**
+   * RF-015 (marcadores visuales): true si en ESTA generación ocurrió un
+   * evento catastrófico (antes del ciclo de reproducción) — un hecho ya
+   * calculado por el servidor, no algo que el cliente deba re-derivar de
+   * `intervalGenerations` (ese valor ni siquiera viaja al cliente hoy).
+   * Permite distinguir a simple vista "el clima se puso desfavorable
+   * gradualmente" (RF-011) de "hubo una catástrofe puntual" (RF-015).
+   */
+  readonly catastropheOccurred: boolean;
 }
 
 /** Mensajes que viaja por api/ws (`/runs/:id/stream`), servidor → cliente. */

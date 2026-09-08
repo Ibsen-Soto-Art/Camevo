@@ -272,6 +272,7 @@ describe("<App />", () => {
                   geneticDiversity: 0,
                   extinct: false,
                   nearExtinct: false,
+                  catastropheOccurred: false,
                 },
               ],
             }),

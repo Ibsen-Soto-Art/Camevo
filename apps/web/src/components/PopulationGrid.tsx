@@ -3,6 +3,8 @@ import type { GenerationSnapshot } from "../lib/camevo-client";
 
 const EMPTY_CELL_COLOR = "#2a2a2a";
 const CANVAS_SIZE = 400;
+const CATASTROPHE_BORDER_COLOR = "#8b0000";
+const CATASTROPHE_BORDER_WIDTH = 8;
 
 export interface PopulationGridProps {
   readonly snapshots: readonly GenerationSnapshot[];
@@ -80,6 +82,22 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
       ctx.fillStyle = fitnessColor(organism.fitness / historicalMaxFitness);
       ctx.fillRect(organism.x * cellWidth, organism.y * cellHeight, cellWidth, cellHeight);
     }
+
+    // RF-015 (marcadores visuales): un "destello" de un solo frame — como
+    // cada snapshot nuevo redibuja la grilla completa desde cero (ver
+    // comentario de arriba), este borde aparece exactamente en el
+    // redibujado de la generación con `catastropheOccurred` y desaparece
+    // solo en el siguiente, sin necesidad de timers ni animación CSS.
+    if (latest.catastropheOccurred) {
+      ctx.strokeStyle = CATASTROPHE_BORDER_COLOR;
+      ctx.lineWidth = CATASTROPHE_BORDER_WIDTH;
+      ctx.strokeRect(
+        CATASTROPHE_BORDER_WIDTH / 2,
+        CATASTROPHE_BORDER_WIDTH / 2,
+        canvas.width - CATASTROPHE_BORDER_WIDTH,
+        canvas.height - CATASTROPHE_BORDER_WIDTH,
+      );
+    }
   }, [latest, gridWidth, gridHeight, historicalMaxFitness]);
 
   if (!latest) {
@@ -92,7 +110,9 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
       <p className="population-grid-caption">
         Cada celda es un organismo, coloreado de rojo a verde según cuántas crías produjo en relación con el mejor
         organismo que tuvo esta corrida hasta ahora. Las celdas oscuras son hábitat vacío — un organismo murió y
-        todavía no fue reemplazado.
+        todavía no fue reemplazado. Un borde rojo alrededor de la grilla marca la generación exacta de un evento
+        catastrófico (RF-015) — dura solo esa generación, distinto de un clima que se pone desfavorable de forma
+        gradual (RF-011).
       </p>
     </div>
   );

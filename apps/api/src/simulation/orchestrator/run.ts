@@ -148,7 +148,14 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
   // RF-015: el evento catastrófico ocurre ANTES del ciclo de reproducción
   // de esta generación — los organismos eliminados no llegan a actuar.
   // `grid.occupiedIndices()` (usado abajo) ya refleja a los sobrevivientes.
-  if (config.catastrophe && generation > 0 && generation % config.catastrophe.intervalGenerations === 0) {
+  // `catastropheOccurred` se guarda en el snapshot (no solo se actúa sobre
+  // ella) para que el frontend pueda marcar la generación exacta sin tener
+  // que re-derivar esta condición a partir de `intervalGenerations`, que
+  // ni siquiera viaja al cliente hoy.
+  const catastropheOccurred = Boolean(
+    config.catastrophe && generation > 0 && generation % config.catastrophe.intervalGenerations === 0,
+  );
+  if (catastropheOccurred && config.catastrophe) {
     applyCatastrophicEvent(grid, config.catastrophe.severity, rng);
   }
 
@@ -225,6 +232,7 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
     geneticDiversity: computeGeneticDiversity(liveOrganisms),
     extinct,
     nearExtinct,
+    catastropheOccurred,
   };
 
   state.generation += 1;

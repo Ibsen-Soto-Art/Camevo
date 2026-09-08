@@ -89,6 +89,26 @@ describe("RF-015: eventos catastróficos periódicos", () => {
     expect(last?.extinct).toBe(true);
     expect(last?.populationSize).toBe(0);
   });
+
+  it("catastropheOccurred es true exactamente en los múltiplos del intervalo (marcadores visuales), y false en el resto", () => {
+    const { snapshots } = runSimulation(
+      baseConfig({
+        updates: 21,
+        ancestorGenomes: Array.from({ length: 20 }, () => createUniformGenome("replicate", 5)),
+        catastrophe: { intervalGenerations: 5, severity: 0.3 }, // severidad baja: no se extingue, llega a los 21 updates
+      }),
+    );
+
+    const flaggedGenerations = snapshots.filter((s) => s.catastropheOccurred).map((s) => s.generation);
+    expect(flaggedGenerations).toEqual([5, 10, 15, 20]);
+    // generación 0 nunca cuenta como evento, aunque 0 % intervalGenerations === 0.
+    expect(snapshots[0]?.catastropheOccurred).toBe(false);
+  });
+
+  it("sin catastrophe configurado, catastropheOccurred siempre es false", () => {
+    const { snapshots } = runSimulation(baseConfig({ updates: 10 }));
+    expect(snapshots.every((s) => !s.catastropheOccurred)).toBe(true);
+  });
 });
 
 describe("Criterio primario: extinción termina la corrida antes de config.updates", () => {

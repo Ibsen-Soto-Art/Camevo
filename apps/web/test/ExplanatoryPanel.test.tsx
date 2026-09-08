@@ -15,6 +15,7 @@ function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
     geneticDiversity: 0.1,
     extinct: false,
     nearExtinct: false,
+    catastropheOccurred: false,
     ...overrides,
   };
 }
