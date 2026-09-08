@@ -23,6 +23,21 @@ import { CatastropheConfig, runSimulation } from "../../src/simulation/orchestra
 const SEEDS = [1, 2, 3, 4, 5];
 const UPDATES = 1500;
 
+/**
+ * Timeout explícito, más generoso que el default de Vitest (5000ms): cada
+ * caso corre 1500 generaciones reales de una grilla 20x20 con clima
+ * activo (no un mock ni un cálculo simplificado) — 7500 generaciones en
+ * total sumando las 5 semillas de un solo `it.each`. Es carga
+ * computacional real y esperada, no una regresión de rendimiento: con el
+ * timeout default, este archivo empezó a fallar por tiempo (no por
+ * assertion) en una máquina bajo uso normal, mientras que a 15000ms se
+ * verificó estable dos veces seguidas antes de fijar este valor. Si en el
+ * futuro empieza a fallar de nuevo a 15s, es más probable que sea una
+ * regresión de rendimiento real en el motor que otra casualidad de carga
+ * de esta máquina — vale la pena investigarlo, no solo subir el número de nuevo.
+ */
+const HEAVY_TEST_TIMEOUT_MS = 15_000;
+
 function fastClimate(seed: number, resourcePool?: ClimatePolicyConfig["resourcePool"]): ClimatePolicyConfig {
   return {
     seed,
@@ -54,23 +69,35 @@ function runScenario(seed: number, resourcePool?: ClimatePolicyConfig["resourceP
 }
 
 describe("Fase 4 — aislamiento de mecanismos: ¿qué causa la extinción, de verdad?", () => {
-  it.each(SEEDS)("semilla %i: SOLO resourcePool [0.01, 0.1], sin catastrophe → nunca se extingue en 1500 generaciones", (seed) => {
-    const { snapshots } = runScenario(seed, POOL_ONLY, undefined);
-    expect(snapshots.at(-1)?.extinct).toBe(false);
-    expect(snapshots.at(-1)?.populationSize).toBe(400);
-  });
+  it.each(SEEDS)(
+    "semilla %i: SOLO resourcePool [0.01, 0.1], sin catastrophe → nunca se extingue en 1500 generaciones",
+    (seed) => {
+      const { snapshots } = runScenario(seed, POOL_ONLY, undefined);
+      expect(snapshots.at(-1)?.extinct).toBe(false);
+      expect(snapshots.at(-1)?.populationSize).toBe(400);
+    },
+    HEAVY_TEST_TIMEOUT_MS,
+  );
 
-  it.each(SEEDS)("semilla %i: SOLO catastrophe (interval=10, severity=0.9), pool normal → nunca se extingue en 1500 generaciones", (seed) => {
-    const { snapshots } = runScenario(seed, undefined, CATASTROPHE);
-    expect(snapshots.at(-1)?.extinct).toBe(false);
-    expect(snapshots.at(-1)?.populationSize).toBe(400);
-  });
+  it.each(SEEDS)(
+    "semilla %i: SOLO catastrophe (interval=10, severity=0.9), pool normal → nunca se extingue en 1500 generaciones",
+    (seed) => {
+      const { snapshots } = runScenario(seed, undefined, CATASTROPHE);
+      expect(snapshots.at(-1)?.extinct).toBe(false);
+      expect(snapshots.at(-1)?.populationSize).toBe(400);
+    },
+    HEAVY_TEST_TIMEOUT_MS,
+  );
 
-  it.each(SEEDS)("semilla %i: AMBOS combinados → extinción real y reproducible", (seed) => {
-    const { snapshots } = runScenario(seed, POOL_ONLY, CATASTROPHE);
-    expect(snapshots.at(-1)?.extinct).toBe(true);
-    expect(snapshots.at(-1)?.populationSize).toBe(0);
-  });
+  it.each(SEEDS)(
+    "semilla %i: AMBOS combinados → extinción real y reproducible",
+    (seed) => {
+      const { snapshots } = runScenario(seed, POOL_ONLY, CATASTROPHE);
+      expect(snapshots.at(-1)?.extinct).toBe(true);
+      expect(snapshots.at(-1)?.populationSize).toBe(0);
+    },
+    HEAVY_TEST_TIMEOUT_MS,
+  );
 });
 
 describe("Fase 4 — el tiempo hasta la extinción depende de la capacidad adaptativa de partida (deuda de extinción)", () => {
