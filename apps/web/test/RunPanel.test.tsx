@@ -68,6 +68,7 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
         run={historicalRunHandle(snapshots)}
         gridWidth={10}
         gridHeight={10}
+        numAncestors={1}
       />,
     );
 
@@ -90,6 +91,7 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
         run={historicalRunHandle(snapshots)}
         gridWidth={10}
         gridHeight={10}
+        numAncestors={1}
       />,
     );
 
@@ -117,6 +119,7 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
         run={historicalRunHandle(snapshots)}
         gridWidth={10}
         gridHeight={10}
+        numAncestors={1}
       />,
     );
 

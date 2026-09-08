@@ -4,6 +4,7 @@ import RunPanel from "./components/RunPanel";
 import { useHistoricalRun } from "./hooks/useHistoricalRun";
 import { useRun, type RunHandle } from "./hooks/useRun";
 import { listRuns, type ClimateChangeSpeed, type RunFormValues, type RunSummary } from "./lib/camevo-client";
+import { effectiveLineageCount } from "./lib/lineage";
 
 /**
  * RF-023: pausar/reanudar y ajustar el ritmo de una corrida ya en curso —
@@ -65,6 +66,15 @@ const DEFAULT_BASE_FORM: BaseFormValues = {
   climateVarianceAmplitude: 0.15,
   msPerGeneration: 80,
 };
+
+/**
+ * RF-008: el formulario no tiene todavía un control para numAncestors
+ * (visibilizar el sembrado, no agregar la opción, era el pedido) — esto
+ * mirra el default real de config-request.ts (`DEFAULTS.numAncestors`).
+ * Corridas en vivo siempre piden este valor; el efectivamente sembrado
+ * con clima activo es mayor (ver lib/lineage.ts, effectiveLineageCount).
+ */
+const DEFAULT_NUM_ANCESTORS = 1;
 
 const SPEED_OPTIONS: { value: ClimateChangeSpeed; label: string }[] = [
   { value: "slow", label: "Lenta" },
@@ -243,6 +253,12 @@ export default function App() {
                   <input type="checkbox" checked={climateEnabled} onChange={(e) => setClimateEnabled(e.target.checked)} />
                   Módulo climático activo
                 </label>
+                {climateEnabled && (
+                  <p className="form-note">
+                    Con el módulo climático activo, la corrida siembra {effectiveLineageCount(DEFAULT_NUM_ANCESTORS, true)}{" "}
+                    linajes ancestrales distintos desde la generación 0 (RF-008) — no un único genotipo semilla.
+                  </p>
+                )}
                 <label>
                   Velocidad del cambio climático
                   <select
@@ -262,6 +278,11 @@ export default function App() {
 
             {mode === "live-compare" && (
               <>
+                <p className="form-note">
+                  El modo comparación siempre corre con el módulo climático activo — cada corrida siembra{" "}
+                  {effectiveLineageCount(DEFAULT_NUM_ANCESTORS, true)} linajes ancestrales distintos desde la generación 0
+                  (RF-008).
+                </p>
                 <label>
                   Velocidad climática — Corrida A
                   <select value={speedA} onChange={(e) => setSpeedA(e.target.value as ClimateChangeSpeed)}>
@@ -338,6 +359,7 @@ export default function App() {
               run={runA}
               gridWidth={base.gridWidth}
               gridHeight={base.gridHeight}
+              numAncestors={DEFAULT_NUM_ANCESTORS}
               chartHeight={320}
             />
             <PlaybackControls run={runA} initialSpeed={base.msPerGeneration} />
@@ -350,6 +372,7 @@ export default function App() {
               run={runB}
               gridWidth={base.gridWidth}
               gridHeight={base.gridHeight}
+              numAncestors={DEFAULT_NUM_ANCESTORS}
               chartHeight={320}
             />
             <PlaybackControls run={runB} initialSpeed={base.msPerGeneration} />
@@ -366,6 +389,7 @@ export default function App() {
             run={historicalA.view}
             gridWidth={historicalA.config?.gridWidth ?? DEFAULT_BASE_FORM.gridWidth}
             gridHeight={historicalA.config?.gridHeight ?? DEFAULT_BASE_FORM.gridHeight}
+            numAncestors={historicalA.config?.numAncestors ?? DEFAULT_NUM_ANCESTORS}
             chartHeight={320}
           />
           <RunPanel
@@ -375,6 +399,7 @@ export default function App() {
             run={historicalB.view}
             gridWidth={historicalB.config?.gridWidth ?? DEFAULT_BASE_FORM.gridWidth}
             gridHeight={historicalB.config?.gridHeight ?? DEFAULT_BASE_FORM.gridHeight}
+            numAncestors={historicalB.config?.numAncestors ?? DEFAULT_NUM_ANCESTORS}
             chartHeight={320}
           />
         </div>
@@ -389,6 +414,7 @@ export default function App() {
             run={runSingle}
             gridWidth={base.gridWidth}
             gridHeight={base.gridHeight}
+            numAncestors={DEFAULT_NUM_ANCESTORS}
           />
           <PlaybackControls run={runSingle} initialSpeed={base.msPerGeneration} />
         </div>

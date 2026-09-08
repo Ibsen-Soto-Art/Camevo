@@ -11,11 +11,22 @@ export interface RunPanelProps {
   readonly run: RunView;
   readonly gridWidth: number;
   readonly gridHeight: number;
+  /** RF-008: numAncestors SOLICITADO — ver ExplanatoryPanel para cómo se resuelve al conteo real sembrado. */
+  readonly numAncestors: number;
   readonly chartHeight?: number;
 }
 
 /** Un run en curso: título, estado, gráfico, grilla poblacional y panel explicativo — la unidad que se repite en modo comparación (RF-025). */
-export default function RunPanel({ title, climateEnabled, climateChangeSpeed, run, gridWidth, gridHeight, chartHeight }: RunPanelProps) {
+export default function RunPanel({
+  title,
+  climateEnabled,
+  climateChangeSpeed,
+  run,
+  gridWidth,
+  gridHeight,
+  numAncestors,
+  chartHeight,
+}: RunPanelProps) {
   return (
     <div className="run-panel">
       <h2>{title}</h2>
@@ -31,7 +42,12 @@ export default function RunPanel({ title, climateEnabled, climateChangeSpeed, ru
       {run.snapshots.length > 0 && (
         <>
           <PopulationGrid snapshots={run.snapshots} gridWidth={gridWidth} gridHeight={gridHeight} />
-          <ExplanatoryPanel climateEnabled={climateEnabled} climateChangeSpeed={climateChangeSpeed} snapshots={run.snapshots} />
+          <ExplanatoryPanel
+            climateEnabled={climateEnabled}
+            climateChangeSpeed={climateChangeSpeed}
+            snapshots={run.snapshots}
+            numAncestors={numAncestors}
+          />
         </>
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ClimateChangeSpeed, GenerationSnapshot } from "../lib/camevo-client";
+import { effectiveLineageCount } from "../lib/lineage";
 
 const SPEED_LABELS: Record<ClimateChangeSpeed, string> = {
   slow: "lenta",
@@ -43,9 +44,12 @@ export interface ExplanatoryPanelProps {
   readonly climateEnabled: boolean;
   readonly climateChangeSpeed: ClimateChangeSpeed;
   readonly snapshots: readonly GenerationSnapshot[];
+  /** El numAncestors SOLICITADO (antes de que el servidor aplique el mínimo de 2 con clima activo) — ver más abajo. */
+  readonly numAncestors: number;
 }
 
-export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, snapshots }: ExplanatoryPanelProps) {
+export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, snapshots, numAncestors }: ExplanatoryPanelProps) {
+  const lineageCount = effectiveLineageCount(numAncestors, climateEnabled);
   const { ratio, hasEnoughData } = useMemo(() => {
     const quarter = Math.floor(snapshots.length / 4);
     if (quarter < 1) return { ratio: 1, hasEnoughData: false };
@@ -94,6 +98,11 @@ export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, s
           de sucumbir igual. La adaptación compra tiempo, no garantiza supervivencia indefinida ante un estrés lo
           bastante severo.
         </p>
+        <p className="panel-note">
+          Esta corrida partió con {lineageCount} linajes ancestrales distintos sembrados en la generación 0 (uno ya
+          capaz de resolver una tarea; el resto, genomas base sin ventaja) — la "capacidad adaptativa con la que
+          partió" mencionada arriba se refiere exactamente a esto, no a algo que la población desarrolló sola.
+        </p>
       </div>
     );
   }
@@ -106,6 +115,10 @@ export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, s
           grilla (actualmente {last.populationSize} organismos, velocidad climática {speedLabel}) — deuda de
           extinción medida directamente en el tamaño de la población, no solo inferida del fitness. Todavía no es
           extinción total: si la población se recupera por encima del umbral, este estado se revierte.
+        </p>
+        <p className="panel-note">
+          Esta corrida partió con {lineageCount} linajes ancestrales distintos sembrados en la generación 0 (uno ya
+          capaz de resolver una tarea; el resto, genomas base sin ventaja).
         </p>
       </div>
     );
@@ -135,9 +148,10 @@ export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, s
     <div className="explanatory-panel">
       <p>{message}</p>
       <p className="panel-note">
-        Nota metodológica: la población parte con un organismo ya capaz de resolver una tarea (variación genética "en
-        pie", presente desde la generación 0), no con la esperanza de que una mutación nueva aparezca justo a tiempo —
-        así funciona también el rescate evolutivo real con más frecuencia.
+        Nota metodológica: esta corrida partió con {lineageCount} linajes ancestrales distintos sembrados en la
+        generación 0 — uno ya capaz de resolver una tarea (variación genética "en pie"), el resto genomas base sin
+        ventaja —, no con la esperanza de que una mutación nueva aparezca justo a tiempo. Así funciona también el
+        rescate evolutivo real con más frecuencia.
       </p>
     </div>
   );

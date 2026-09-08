@@ -100,6 +100,13 @@
   font-style: italic;
 }
 
+.form-note {
+  margin: 0;
+  color: #555;
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
 .chart-caption {
   margin-top: 0.4rem;
   color: #777;

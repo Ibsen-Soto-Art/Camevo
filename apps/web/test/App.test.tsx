@@ -65,6 +65,20 @@ describe("<App />", () => {
     expect(screen.getByRole("button", { name: "Iniciar corrida" })).toBeEnabled();
   });
 
+  it("RF-008: con el módulo climático activo (default), avisa en el formulario cuántos linajes se van a sembrar antes de arrancar", async () => {
+    render(<App />);
+    expect(screen.getByText(/siembra 2 linajes ancestrales distintos/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /módulo climático activo/i }));
+    expect(screen.queryByText(/linajes ancestrales distintos/i)).not.toBeInTheDocument();
+  });
+
+  it("RF-008: en modo comparación en vivo (clima siempre activo), avisa el mismo conteo de linajes", async () => {
+    render(<App />);
+    await userEvent.selectOptions(screen.getByLabelText("Modo"), "live-compare");
+    expect(screen.getByText(/siembra.*2 linajes ancestrales distintos/i)).toBeInTheDocument();
+  });
+
   it("al iniciar una corrida, llama a POST /runs con la configuración del formulario y abre el WebSocket del runId devuelto", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
