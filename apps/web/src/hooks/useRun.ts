@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
-import { connectToRunStream, createRun, type GenerationSnapshot, type RunFormValues } from "../lib/camevo-client";
+import { connectToRunStream, createRun, type GenerationSnapshot, type RunFormValues, type RunStreamHandle } from "../lib/camevo-client";
 
-export type RunStatus = "idle" | "running" | "done" | "error";
+export type RunStatus = "idle" | "running" | "paused" | "done" | "error";
 
 /**
  * Forma mínima que necesita RunPanel para renderizar una corrida — sin el
@@ -19,6 +19,12 @@ export interface RunView {
 
 export interface RunHandle extends RunView {
   readonly start: (values: RunFormValues) => Promise<void>;
+  /** RF-023: solo tiene efecto mientras status === "running". */
+  readonly pause: () => void;
+  /** RF-023: solo tiene efecto mientras status === "paused". */
+  readonly resume: () => void;
+  /** RF-023: ajusta el ritmo de una corrida ya en curso (running o paused). */
+  readonly setSpeed: (msPerGeneration: number) => void;
 }
 
 /** Crea una corrida y acumula sus snapshots en vivo — una instancia por panel (RF-025: 1 o 2 en paralelo). */
@@ -27,34 +33,59 @@ export function useRun(): RunHandle {
   const [runId, setRunId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<GenerationSnapshot[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const closeRef = useRef<(() => void) | null>(null);
+  const statusRef = useRef<RunStatus>("idle");
+  const streamRef = useRef<RunStreamHandle | null>(null);
 
-  const start = useCallback(async (values: RunFormValues) => {
-    closeRef.current?.();
-    setStatus("running");
-    setErrorMessage(null);
-    setSnapshots([]);
-    setRunId(null);
-
-    try {
-      const { runId: newRunId } = await createRun(values);
-      setRunId(newRunId);
-
-      closeRef.current = connectToRunStream(newRunId, (message) => {
-        if (message.type === "snapshot") {
-          setSnapshots((prev) => [...prev, message.snapshot]);
-        } else if (message.type === "done") {
-          setStatus("done");
-        } else if (message.type === "error") {
-          setStatus("error");
-          setErrorMessage(message.message);
-        }
-      });
-    } catch (error) {
-      setStatus("error");
-      setErrorMessage(error instanceof Error ? error.message : "Error desconocido");
-    }
+  const updateStatus = useCallback((next: RunStatus) => {
+    statusRef.current = next;
+    setStatus(next);
   }, []);
 
-  return { status, runId, snapshots, errorMessage, start };
+  const start = useCallback(
+    async (values: RunFormValues) => {
+      streamRef.current?.close();
+      updateStatus("running");
+      setErrorMessage(null);
+      setSnapshots([]);
+      setRunId(null);
+
+      try {
+        const { runId: newRunId } = await createRun(values);
+        setRunId(newRunId);
+
+        streamRef.current = connectToRunStream(newRunId, (message) => {
+          if (message.type === "snapshot") {
+            setSnapshots((prev) => [...prev, message.snapshot]);
+          } else if (message.type === "done") {
+            updateStatus("done");
+          } else if (message.type === "error") {
+            updateStatus("error");
+            setErrorMessage(message.message);
+          }
+        });
+      } catch (error) {
+        updateStatus("error");
+        setErrorMessage(error instanceof Error ? error.message : "Error desconocido");
+      }
+    },
+    [updateStatus],
+  );
+
+  const pause = useCallback(() => {
+    if (statusRef.current !== "running") return;
+    streamRef.current?.send({ type: "pause" });
+    updateStatus("paused");
+  }, [updateStatus]);
+
+  const resume = useCallback(() => {
+    if (statusRef.current !== "paused") return;
+    streamRef.current?.send({ type: "resume" });
+    updateStatus("running");
+  }, [updateStatus]);
+
+  const setSpeed = useCallback((msPerGeneration: number) => {
+    streamRef.current?.send({ type: "setSpeed", msPerGeneration });
+  }, []);
+
+  return { status, runId, snapshots, errorMessage, start, pause, resume, setSpeed };
 }

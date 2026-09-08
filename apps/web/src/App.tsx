@@ -2,8 +2,38 @@ import { useEffect, useState, type FormEvent } from "react";
 import "./App.css";
 import RunPanel from "./components/RunPanel";
 import { useHistoricalRun } from "./hooks/useHistoricalRun";
-import { useRun } from "./hooks/useRun";
+import { useRun, type RunHandle } from "./hooks/useRun";
 import { listRuns, type ClimateChangeSpeed, type RunFormValues, type RunSummary } from "./lib/camevo-client";
+
+/**
+ * RF-023: pausar/reanudar y ajustar el ritmo de una corrida ya en curso —
+ * no aplica a corridas guardadas (ya terminadas). `initialSpeed` alimenta
+ * el `defaultValue` del slider; usar `key={run.runId}` en el llamador para
+ * que una corrida nueva no herede la posición del slider de la anterior.
+ */
+function PlaybackControls({ run, initialSpeed }: { readonly run: RunHandle; readonly initialSpeed: number }) {
+  if (run.status !== "running" && run.status !== "paused") {
+    return null;
+  }
+  return (
+    <div className="playback-controls">
+      <button type="button" onClick={() => (run.status === "paused" ? run.resume() : run.pause())}>
+        {run.status === "paused" ? "Reanudar" : "Pausar"}
+      </button>
+      <label>
+        Ritmo (ms/generación)
+        <input
+          type="range"
+          min={0}
+          max={500}
+          step={10}
+          defaultValue={initialSpeed}
+          onChange={(e) => run.setSpeed(Number(e.target.value))}
+        />
+      </label>
+    </div>
+  );
+}
 
 type Mode = "single" | "live-compare" | "saved-compare";
 
@@ -21,6 +51,8 @@ interface BaseFormValues {
   readonly placementMode: RunFormValues["placementMode"];
   readonly reproducibilityMode: RunFormValues["reproducibilityMode"];
   readonly climateVarianceAmplitude: number;
+  /** RF-023: ritmo inicial de reproducción — ajustable después en curso vía PlaybackControls. */
+  readonly msPerGeneration: number;
 }
 
 const DEFAULT_BASE_FORM: BaseFormValues = {
@@ -31,6 +63,7 @@ const DEFAULT_BASE_FORM: BaseFormValues = {
   placementMode: "near-parent",
   reproducibilityMode: "reproducible",
   climateVarianceAmplitude: 0.15,
+  msPerGeneration: 80,
 };
 
 const SPEED_OPTIONS: { value: ClimateChangeSpeed; label: string }[] = [
@@ -192,6 +225,17 @@ export default function App() {
                 onChange={(e) => setBase({ ...base, climateVarianceAmplitude: Number(e.target.value) })}
               />
             </label>
+            <label>
+              Ritmo de reproducción inicial (ms/generación)
+              <input
+                type="number"
+                min={0}
+                max={5000}
+                step={10}
+                value={base.msPerGeneration}
+                onChange={(e) => setBase({ ...base, msPerGeneration: Number(e.target.value) })}
+              />
+            </label>
 
             {mode === "single" && (
               <>
@@ -242,7 +286,15 @@ export default function App() {
             )}
 
             <button type="submit" disabled={running}>
-              {running ? "Corriendo…" : compareMode ? "Iniciar ambas corridas" : "Iniciar corrida"}
+              {running
+                ? "Corriendo…"
+                : compareMode
+                  ? runA.runId || runB.runId
+                    ? "Reiniciar ambas corridas"
+                    : "Iniciar ambas corridas"
+                  : runSingle.runId
+                    ? "Reiniciar corrida"
+                    : "Iniciar corrida"}
             </button>
           </>
         )}
@@ -278,20 +330,26 @@ export default function App() {
 
       {mode === "live-compare" && (
         <div className="compare-grid">
-          <RunPanel
-            title={`Corrida A — velocidad ${speedA}`}
-            climateEnabled
-            climateChangeSpeed={speedA}
-            run={runA}
-            chartHeight={320}
-          />
-          <RunPanel
-            title={`Corrida B — velocidad ${speedB}`}
-            climateEnabled
-            climateChangeSpeed={speedB}
-            run={runB}
-            chartHeight={320}
-          />
+          <div key={runA.runId ?? "A"}>
+            <RunPanel
+              title={`Corrida A — velocidad ${speedA}`}
+              climateEnabled
+              climateChangeSpeed={speedA}
+              run={runA}
+              chartHeight={320}
+            />
+            <PlaybackControls run={runA} initialSpeed={base.msPerGeneration} />
+          </div>
+          <div key={runB.runId ?? "B"}>
+            <RunPanel
+              title={`Corrida B — velocidad ${speedB}`}
+              climateEnabled
+              climateChangeSpeed={speedB}
+              run={runB}
+              chartHeight={320}
+            />
+            <PlaybackControls run={runB} initialSpeed={base.msPerGeneration} />
+          </div>
         </div>
       )}
 
@@ -315,7 +373,10 @@ export default function App() {
       )}
 
       {mode === "single" && (
-        <RunPanel title="Corrida" climateEnabled={climateEnabled} climateChangeSpeed={speedSingle} run={runSingle} />
+        <div key={runSingle.runId ?? "single"}>
+          <RunPanel title="Corrida" climateEnabled={climateEnabled} climateChangeSpeed={speedSingle} run={runSingle} />
+          <PlaybackControls run={runSingle} initialSpeed={base.msPerGeneration} />
+        </div>
       )}
     </main>
   );

@@ -1,7 +1,8 @@
-import type { CreateRunRequest, GetRunResponse, ListRunsResponse, LiveMessage } from "@camevo/shared-types";
+import type { ControlMessage, CreateRunRequest, GetRunResponse, ListRunsResponse, LiveMessage } from "@camevo/shared-types";
 
 export type {
   ClimateChangeSpeed,
+  ControlMessage,
   GenerationSnapshot,
   GetRunResponse,
   ListRunsResponse,
@@ -33,6 +34,7 @@ export type RunFormValues = Required<
     | "climateEnabled"
     | "climateChangeSpeed"
     | "climateVarianceAmplitude"
+    | "msPerGeneration"
   >
 >;
 
@@ -49,12 +51,21 @@ export async function createRun(values: RunFormValues): Promise<{ runId: string 
   return (await res.json()) as { runId: string };
 }
 
-export function connectToRunStream(runId: string, onMessage: (message: LiveMessage) => void): () => void {
+/** RF-023: además de cerrar, `send` manda mensajes de control (pause/resume/setSpeed) por el mismo socket ya abierto. */
+export interface RunStreamHandle {
+  readonly close: () => void;
+  readonly send: (message: ControlMessage) => void;
+}
+
+export function connectToRunStream(runId: string, onMessage: (message: LiveMessage) => void): RunStreamHandle {
   const socket = new WebSocket(`${WS_BASE}/runs/${runId}/stream`);
   socket.addEventListener("message", (event: MessageEvent<string>) => {
     onMessage(JSON.parse(event.data) as LiveMessage);
   });
-  return () => socket.close();
+  return {
+    close: () => socket.close(),
+    send: (message) => socket.send(JSON.stringify(message)),
+  };
 }
 
 /** RF-025: corridas guardadas más recientes primero, para el selector de comparación histórica. */

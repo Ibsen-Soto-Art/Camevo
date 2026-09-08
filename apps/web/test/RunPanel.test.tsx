@@ -44,6 +44,9 @@ function historicalRunHandle(snapshots: GenerationSnapshot[]): RunHandle {
     snapshots,
     errorMessage: null,
     start: async () => {},
+    pause: () => {},
+    resume: () => {},
+    setSpeed: () => {},
   };
 }
 

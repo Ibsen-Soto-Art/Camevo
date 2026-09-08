@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../src/App";
@@ -22,6 +22,7 @@ class FakeWebSocket {
 
   readonly url: string;
   readyState = FakeWebSocket.OPEN;
+  readonly sent: unknown[] = [];
   private readonly listeners: Record<string, ((event: unknown) => void)[]> = {};
 
   constructor(url: string) {
@@ -35,6 +36,10 @@ class FakeWebSocket {
 
   emit(type: string, event: unknown): void {
     for (const listener of this.listeners[type] ?? []) listener(event);
+  }
+
+  send(data: string): void {
+    this.sent.push(JSON.parse(data));
   }
 
   close(): void {}
@@ -114,6 +119,54 @@ describe("<App />", () => {
 
     // RF-026: el panel explicativo aparece una vez que hay snapshots.
     expect(document.querySelector(".explanatory-panel")).toBeInTheDocument();
+  });
+
+  it("RF-023: Pausar envía 'pause' por el WS y cambia a Reanudar; Reanudar envía 'resume'", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ runId: "run-pause" }) }));
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar corrida" }));
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+
+    const pauseButton = await screen.findByRole("button", { name: "Pausar" });
+    await userEvent.click(pauseButton);
+
+    expect(socket.sent).toContainEqual({ type: "pause" });
+    expect(await screen.findByRole("button", { name: "Reanudar" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Reanudar" }));
+    expect(socket.sent).toContainEqual({ type: "resume" });
+    expect(await screen.findByRole("button", { name: "Pausar" })).toBeInTheDocument();
+  });
+
+  it("RF-023: mover el control de ritmo envía 'setSpeed' con el nuevo msPerGeneration", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ runId: "run-speed" }) }));
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar corrida" }));
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+
+    const speedSlider = await screen.findByLabelText(/ritmo \(ms\/generación\)/i);
+    fireEvent.change(speedSlider, { target: { value: "150" } });
+
+    expect(socket.sent).toContainEqual({ type: "setSpeed", msPerGeneration: 150 });
+  });
+
+  it("RF-023: el botón pasa a decir 'Reiniciar corrida' después de que una corrida ya arrancó", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ runId: "run-restart" }) }));
+
+    render(<App />);
+    expect(screen.getByRole("button", { name: "Iniciar corrida" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar corrida" }));
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.emit("message", { data: JSON.stringify({ type: "done" }) });
+
+    expect(await screen.findByRole("button", { name: "Reiniciar corrida" })).toBeInTheDocument();
   });
 
   it("muestra un mensaje de error si la creación de la corrida falla", async () => {
