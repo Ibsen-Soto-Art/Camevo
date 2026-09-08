@@ -49,8 +49,18 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
 
   return (
     <div>
+      {/*
+        left: 20, no 0 — el título rotado del eje Y izquierdo ("Fitness /
+        diversidad", position "insideLeft") se recorta contra el borde del
+        SVG sin este margen: medido con Playwright, el bounding box del
+        label empieza ~6-8px a la izquierda del borde del SVG en left:0, en
+        cualquier ancho de viewport probado (1280px y 420px, mismo déficit)
+        — no es un problema de layout responsive, es un margen fijo
+        insuficiente. El eje derecho ya tenía margen de sobra (right: 30) y
+        no lo necesitó.
+      */}
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={chartRows} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+        <LineChart data={chartRows} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="generation" label={{ value: "Generación", position: "insideBottom", offset: -5 }} />
           <YAxis
