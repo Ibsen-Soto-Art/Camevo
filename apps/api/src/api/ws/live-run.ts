@@ -34,6 +34,30 @@ function sleep(ms: number): Promise<void> {
  * literalmente no avanza (ver playback-control.ts para la garantía de
  * determinismo). El chequeo de `closed` se repite después de esperar,
  * por si el socket se cerró mientras estaba pausado.
+ *
+ * Fase 5 (cierre de la prueba de carga contra el VPS real): `saveSnapshot`
+ * NO se espera antes de enviar cada snapshot — se acumula su promesa en
+ * `pendingWrites` y se espera UNA sola vez, al final, no una vez por
+ * generación. Medido con causalidad confirmada (no solo sospechado): con
+ * el await bloqueante por generación, 5 conexiones concurrentes a grilla
+ * máxima contra Postgres real tenían un peor caso de ~1.9s de atraso
+ * entre snapshots; con la escritura fuera del camino crítico, bajó a
+ * ~0.96s (2x mejor), con el promedio prácticamente sin cambios — porque
+ * el trabajo total (cómputo + escritura) sigue siendo el mismo, solo que
+ * una escritura lenta ya no bloquea EL ENVÍO de ese mensaje en particular
+ * (ver docs/04-roadmap-fases.md para la tabla completa). Se descartó
+ * batchear escrituras: hubiera agregado estado nuevo (buffer por
+ * conexión, vaciarlo al cerrar/extinguirse) para atacar la CANTIDAD de
+ * round-trips, cuando el problema confirmado era la LATENCIA de
+ * bloquear, no cuántas escrituras se hacían.
+ *
+ * Un fallo de escritura NUNCA se pierde en silencio: se loguea con
+ * runId + generación (único rastro disponible hoy — el proyecto no tiene
+ * otro mecanismo de logging/alertas). Esperar `pendingWrites` al final
+ * (después de "done", no antes) preserva la garantía de que cuando esta
+ * función resuelve, cada snapshot ya fue persistido o su fallo ya quedó
+ * registrado — sin que ese vaciado final bloquee el cierre del socket
+ * que sí ve el usuario.
  */
 export async function streamRunLive(
   runId: string,
@@ -48,13 +72,19 @@ export async function streamRunLive(
   });
 
   const state = createSimulationState(config);
+  const pendingWrites: Promise<void>[] = [];
 
   for (let i = 0; i < config.updates && !closed; i++) {
     await control.waitIfPaused();
     if (closed) break;
 
     const snapshot = advanceGeneration(state);
-    await repository.saveSnapshot(runId, snapshot.generation, snapshot as unknown as Record<string, unknown>);
+
+    pendingWrites.push(
+      repository.saveSnapshot(runId, snapshot.generation, snapshot as unknown as Record<string, unknown>).catch((err: unknown) => {
+        console.error(`No se pudo persistir el snapshot ${snapshot.generation} de la corrida ${runId}:`, err);
+      }),
+    );
 
     if (socket.readyState === socket.OPEN) {
       const message: LiveMessage = { type: "snapshot", snapshot };
@@ -71,4 +101,6 @@ export async function streamRunLive(
     socket.send(JSON.stringify(message));
     socket.close();
   }
+
+  await Promise.all(pendingWrites);
 }

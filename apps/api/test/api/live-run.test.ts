@@ -1,9 +1,10 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createUniformGenome } from "../../src/engine/organism/genome";
 import { streamRunLive } from "../../src/api/ws/live-run";
 import { PlaybackControl } from "../../src/api/ws/playback-control";
 import { InMemoryRunRepository } from "../../src/persistence/repository/in-memory-repository";
+import { GenerationSnapshotRecord } from "../../src/persistence/repository/types";
 import { SimulationConfig } from "../../src/simulation/orchestrator/run";
 import type { LiveMessage } from "@camevo/shared-types";
 
@@ -147,5 +148,105 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
     const snapshotsA = socketA.sent.filter((m) => m.type === "snapshot");
     const snapshotsB = socketB.sent.filter((m) => m.type === "snapshot");
     expect(snapshotsB).toEqual(snapshotsA);
+  });
+});
+
+/** Repositorio con saveSnapshot controlable: demora artificial y/o falla en generaciones elegidas. */
+class ControllableRepository extends InMemoryRunRepository {
+  constructor(
+    private readonly delayMs: number,
+    private readonly failGenerations: ReadonlySet<number> = new Set(),
+  ) {
+    super();
+  }
+
+  override async saveSnapshot(runId: string, generation: number, snapshot: Record<string, unknown>): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    if (this.failGenerations.has(generation)) {
+      throw new Error(`fallo simulado en generación ${generation}`);
+    }
+    return super.saveSnapshot(runId, generation, snapshot);
+  }
+}
+
+describe("streamRunLive — saveSnapshot no bloquea el envío (Fase 5, cierre de la prueba de carga)", () => {
+  function buildConfig(seed: number, updates: number): SimulationConfig {
+    return {
+      gridWidth: 5,
+      gridHeight: 5,
+      baseCyclesPerUpdate: 20,
+      mutationRate: 0.05,
+      ancestorGenomes: [createUniformGenome("replicate", 5)],
+      placementMode: "near-parent",
+      updates,
+      seed,
+    };
+  }
+
+  it("una escritura lenta no retrasa el envío de los snapshots siguientes", async () => {
+    const WRITE_DELAY_MS = 150;
+    const UPDATES = 4;
+    const repository = new ControllableRepository(WRITE_DELAY_MS);
+    const run = await repository.createRun({ config: {}, seed: 1 });
+    const socket = new FakeSocket();
+
+    const start = Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(run.id, buildConfig(1, UPDATES), repository, socket as any, new PlaybackControl(0));
+    const totalMs = Date.now() - start;
+
+    expect(socket.sent.filter((m) => m.type === "snapshot")).toHaveLength(UPDATES);
+    // Si cada escritura bloqueara el envío, el total sería >= UPDATES * WRITE_DELAY_MS
+    // (4 * 150 = 600ms). Al no bloquear, las escrituras corren en paralelo entre sí —
+    // el total debería acercarse a UN solo WRITE_DELAY_MS, no a la suma de los cuatro.
+    expect(totalMs).toBeLessThan(UPDATES * WRITE_DELAY_MS);
+  });
+
+  it("por más lenta que sea la escritura, streamRunLive no resuelve hasta que todas terminan (o fallan)", async () => {
+    const WRITE_DELAY_MS = 100;
+    const UPDATES = 3;
+    const repository = new ControllableRepository(WRITE_DELAY_MS);
+    const run = await repository.createRun({ config: {}, seed: 2 });
+    const socket = new FakeSocket();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(run.id, buildConfig(2, UPDATES), repository, socket as any, new PlaybackControl(0));
+
+    // Para cuando streamRunLive resolvió, todas las escrituras (que arrancaron
+    // casi simultáneas) ya tuvieron tiempo de sobra para terminar.
+    const persisted = await repository.listSnapshots(run.id);
+    expect(persisted).toHaveLength(UPDATES);
+  });
+
+  it("un fallo de escritura se loguea con runId y generación, y no interrumpe el resto de la corrida", async () => {
+    const UPDATES = 5;
+    const FAILING_GENERATION = 2;
+    const repository = new ControllableRepository(0, new Set([FAILING_GENERATION]));
+    const run = await repository.createRun({ config: {}, seed: 3 });
+    const socket = new FakeSocket();
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await streamRunLive(run.id, buildConfig(3, UPDATES), repository, socket as any, new PlaybackControl(0));
+
+      // La corrida completa igual, generación fallida incluida — el fallo de
+      // persistencia no es visible para el cliente WS, solo para el operador.
+      expect(socket.sent.filter((m) => m.type === "snapshot")).toHaveLength(UPDATES);
+      expect(socket.sent.at(-1)).toEqual({ type: "done" });
+
+      // El rastro del fallo existe: no es una pérdida silenciosa.
+      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+      const [message] = consoleErrorSpy.mock.calls[0] as [string, unknown];
+      expect(message).toContain(run.id);
+      expect(message).toContain(String(FAILING_GENERATION));
+
+      // Todas las generaciones MENOS la que falló quedaron persistidas.
+      const persisted = await repository.listSnapshots(run.id);
+      const persistedGenerations = persisted.map((s: GenerationSnapshotRecord) => s.generation);
+      expect(persistedGenerations).toEqual([0, 1, 3, 4]);
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
