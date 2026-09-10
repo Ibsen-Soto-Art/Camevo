@@ -1,6 +1,6 @@
 # CAMEVO — Especificación de Requisitos
 
-**Versión 1.2 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.3 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` para no funcionales. Prioridad: **M** (Must — MVP), **S** (Should — fase 2/3), **C** (Could — fase 4+).
 
@@ -24,6 +24,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 
 > **Nota de origen:** RF-008 y RF-009 se incorporaron tras revisar la interfaz de **Avida-ED** (la versión educativa oficial de Avida), que expone ambos mecanismos como configuración estándar del entorno. Se adoptan por su bajo costo de implementación relativo y su alto valor pedagógico.
 
+> **Nota de visibilidad (RF-024):** RF-008 estuvo completo a nivel de motor desde el cierre de la Fase 1 — el sembrado múltiple ya ocurría, solo que no se le decía al usuario. Al construir RF-024 (grilla poblacional) se detectó que la única divulgación existente era parcial (no reflejaba el conteo real, desaparecía justo en extinción/cuasi-extinción, y solo aparecía después de arrancar la corrida, nunca antes). Se corrigieron las tres brechas — ver `CHANGELOG.md` v0.13.0. No cambia el cumplimiento del requisito, que ya era completo; agrega la transparencia hacia el usuario que antes solo vivía en comentarios de código.
+
 ### 1.2 Módulo climático
 
 | ID | Requisito | Prioridad |
@@ -43,6 +45,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 
 > **Nota de trazabilidad:** RF-016 y RF-017 se evaluaron y se decidió excluirlos explícitamente del alcance del proyecto (fragmentación de hábitat y gradiente espacial/migración). Se conservan sus IDs en esta tabla para dejar constancia de la decisión, no se reutilizan. RF-015 (eventos catastróficos) fue reincorporado al alcance tras revisión.
 
+> **Nota de visibilidad (RF-024):** RF-015 estuvo completo a nivel de motor desde el cierre de la Fase 4 — el evento catastrófico ya ocurría, pero antes de esta ronda no había ninguna forma de distinguirlo a simple vista de un clima que simplemente se puso desfavorable de forma gradual (RF-011). Al construir la grilla poblacional (RF-024) se agregó `catastropheOccurred` al snapshot y marcadores visuales en la gráfica (línea de referencia) y en la grilla (destello de borde de un solo cuadro) — ver `CHANGELOG.md` v0.13.0. No cambia el cumplimiento del requisito, que ya era completo.
+
 ### 1.3 Visualización y control de usuario
 
 | ID | Requisito | Prioridad |
@@ -59,6 +63,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 > **Nota de origen:** RF-027 se incorporó tras revisar Avida-ED, que ofrece una vista de "Organismo" independiente de la vista de "Población". Complementa las métricas agregadas (RF-020/RF-021) con evidencia concreta a nivel individual, útil para el público estudiantil (RF-026, audiencia objetivo).
 
 > **Nota de cierre:** RF-023 quedó completo tras una auditoría dedicada (fuera de cualquier fase numerada, ver `04-roadmap-fases.md`, "Deuda de alcance cerrada fuera de fase"). Cerró tres huecos reales: pausar (con congelamiento real del motor — `advanceGeneration` no avanza mientras está pausado, para no romper RNF-003), `msPerGeneration` configurable al arrancar y ajustable en vivo, y un botón de reinicio explícito (antes solo funcionaba reenviando el formulario, sin ninguna señal de que eso era lo que hacía).
+
+> **Nota de cierre:** RF-024 quedó completo con un componente `PopulationGrid` (canvas, no SVG — hasta 1600 celdas actualizándose por WebSocket harían que SVG reconciliara demasiados nodos DOM por generación). Cada celda ocupada se colorea con un gradiente continuo según el fitness del organismo, normalizado contra el máximo histórico de ESA corrida (no el máximo de cada snapshot individual — decisión deliberada: `fitness` crece con la duración de la corrida, no con qué tan sana está, así que normalizar por snapshot haría ver "saludable" a una población objetivamente débil justo antes de un colapso). Las celdas sin organismo se muestran con un color de fondo distinto — hábitat perdido. El diseño del snapshot liviano (`03-arquitectura.md`, sección 4, punto 5) anticipó exactamente este momento: `OrganismSummary {id, x, y, fitness}` es precisamente lo que este componente necesita, sin haber tenido que agregar ningún campo nuevo al snapshot para la grilla en sí.
 
 ### 1.4 Persistencia
 

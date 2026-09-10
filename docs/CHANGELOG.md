@@ -6,6 +6,37 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.13.0] — RF-024 completo: grilla poblacional, con visibilidad nueva para RF-008/RF-015
+
+**Documentos afectados:** `02-requisitos.md` (v1.2 → v1.3 — nota de cierre junto a RF-024,
+notas de visibilidad junto a RF-008 y RF-015) y `03-arquitectura.md` (v1.1 → v1.2 — nota de
+confirmación en la sección 4, punto 5)
+
+### Changed
+- RF-024 completado: grilla poblacional estilo Avida-ED (`PopulationGrid`, canvas) — cada
+  celda ocupada coloreada por fitness normalizado contra el máximo histórico de esa corrida
+  (no el de cada snapshot individual, para no mostrar "saludable" a una población rumbo al
+  colapso), celdas vacías con color distinto (hábitat perdido).
+- RF-008 y RF-015 no cambiaron de estado (ya estaban completos a nivel de motor desde las
+  Fases 1 y 4 respectivamente), pero ganaron visibilidad explícita en la UI que antes no
+  tenían: RF-008 ahora declara el conteo real de linajes sembrados (antes la única nota
+  existente no reflejaba el número real y desaparecía justo en extinción/cuasi-extinción);
+  RF-015 ahora tiene marcadores visuales — una línea de referencia en la gráfica y un
+  destello de borde de un solo cuadro en la grilla — para distinguirlo de un clima que
+  simplemente se puso desfavorable de forma gradual (RF-011), antes indistinguibles a
+  simple vista.
+- `GenerationSnapshot` gana `catastropheOccurred` (shared-types) para soportar los
+  marcadores de RF-015 — un hecho ya calculado por el servidor, no algo que el frontend
+  deba re-derivar.
+
+**Motivo:** cierre de la ronda de mejoras de interfaz iniciada tras RF-023 (v0.12.0). El
+recorte de etiquetas de ejes y el rediseño responsive, hechos en la misma ronda, no
+generan entradas propias acá: son cambios de código sin ninguna decisión de alcance o
+documentación detrás (ver la nota introductoria de este documento) — quedan registrados en
+git (commits `6212551` y `14d6925`), no en el changelog.
+
+---
+
 ## [v0.12.0] — RF-023 completo: pausar, ritmo de reproducción y reiniciar
 
 **Documentos afectados:** `02-requisitos.md` (v1.1 → v1.2 — nota de cierre junto a RF-023) y

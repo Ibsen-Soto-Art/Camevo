@@ -1,6 +1,6 @@
 # CAMEVO — Arquitectura de Software y Stack Tecnológico
 
-**Versión 1.1 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.2 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 ---
 
@@ -108,6 +108,8 @@ Alineado con tu convención ya establecida:
 5. El `orchestrator` calcula métricas agregadas (fitness promedio, diversidad genética) y arma un snapshot de la generación — **liviano**: incluye por organismo solo su posición, fitness y un identificador, no su genoma completo (ver 4.1).
 6. El snapshot se emite por `api/ws` al frontend y opcionalmente se persiste vía `persistence/repository`.
 7. El frontend recibe el snapshot y actualiza gráficas y grilla en tiempo real.
+
+> **Nota de confirmación (RF-024, `CHANGELOG.md` v0.13.0):** el diseño "liviano" del punto 5 — `{id, x, y, fitness}` por organismo, sin genoma — se decidió en la Fase 0 pensando explícitamente en este momento. Al construir la grilla poblacional (`PopulationGrid`, un canvas coloreado por fitness) se confirmó que esos cuatro campos eran exactamente, y únicamente, lo que hacía falta: no se necesitó agregar ningún campo nuevo al snapshot para posicionar ni colorear una celda. La predicción de arquitectura se cumplió tal como se diseñó.
 
 ### 4.1 Flujo bajo demanda: detalle de organismo (RF-027)
 
