@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GenerationSnapshot } from "../lib/camevo-client";
 
 const EMPTY_CELL_COLOR = "#2a2a2a";
-const CANVAS_SIZE = 400;
+const DEFAULT_DISPLAY_SIZE = 400;
+const MAX_DISPLAY_SIZE = 700;
 const CATASTROPHE_BORDER_COLOR = "#8b0000";
 const CATASTROPHE_BORDER_WIDTH = 8;
 
@@ -33,10 +34,42 @@ function fitnessColor(normalized: number): string {
  * Desacoplado de RunView/RunHandle (mismo tipo de entrada que RunChart:
  * solo `snapshots` + las dimensiones de la grilla), así que sirve igual
  * para una corrida en vivo que para una ya guardada (RF-025).
+ *
+ * Rediseño responsive: el tamaño de despliegue se mide del contenedor
+ * real vía ResizeObserver, no un valor fijo puesto una sola vez al
+ * montar — antes, con `<canvas width={400} height={400}>` y solo
+ * `max-width:100%` en CSS, el canvas se achicaba bien en mobile pero
+ * JAMÁS crecía más allá de 400px en desktop, dejando espacio vacío
+ * sobrante en la columna derecha del nuevo layout (~65-70% del
+ * viewport, bastante más ancha que 400px). `ResizeObserver` puede no
+ * existir en jsdom (tests) — se degrada con gracia al tamaño por
+ * defecto en vez de tirar un error, sin necesitar un mock específico.
+ *
+ * También corrige nitidez en pantallas de alta densidad (Retina, etc.):
+ * el buffer interno del canvas ahora se escala por `devicePixelRatio`,
+ * con las coordenadas de dibujo siempre en unidades CSS (`ctx.scale`) —
+ * antes, un canvas de 400x400 píxeles físicos mostrado a 400 CSS px se
+ * veía correcto en pantallas 1x pero ligeramente suave en 2x/3x.
  */
 export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: PopulationGridProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [displaySize, setDisplaySize] = useState(DEFAULT_DISPLAY_SIZE);
   const latest = snapshots.at(-1);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width && width > 0) {
+        setDisplaySize(Math.min(Math.round(width), MAX_DISPLAY_SIZE));
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   /**
    * Máximo histórico de ESTA corrida hasta el snapshot actual, no el
@@ -72,11 +105,18 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const cellWidth = canvas.width / gridWidth;
-    const cellHeight = canvas.height / gridHeight;
+    const dpr = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
+    canvas.width = displaySize * dpr;
+    canvas.height = displaySize * dpr;
+    canvas.style.width = `${displaySize}px`;
+    canvas.style.height = `${displaySize}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // a partir de acá, todas las coordenadas son en px CSS, no físicos
+
+    const cellWidth = displaySize / gridWidth;
+    const cellHeight = displaySize / gridHeight;
 
     ctx.fillStyle = EMPTY_CELL_COLOR;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, displaySize, displaySize);
 
     for (const organism of latest.organisms) {
       ctx.fillStyle = fitnessColor(organism.fitness / historicalMaxFitness);
@@ -94,19 +134,19 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
       ctx.strokeRect(
         CATASTROPHE_BORDER_WIDTH / 2,
         CATASTROPHE_BORDER_WIDTH / 2,
-        canvas.width - CATASTROPHE_BORDER_WIDTH,
-        canvas.height - CATASTROPHE_BORDER_WIDTH,
+        displaySize - CATASTROPHE_BORDER_WIDTH,
+        displaySize - CATASTROPHE_BORDER_WIDTH,
       );
     }
-  }, [latest, gridWidth, gridHeight, historicalMaxFitness]);
+  }, [latest, gridWidth, gridHeight, historicalMaxFitness, displaySize]);
 
   if (!latest) {
     return null;
   }
 
   return (
-    <div className="population-grid">
-      <canvas ref={canvasRef} width={CANVAS_SIZE} height={CANVAS_SIZE} role="img" aria-label="Grilla poblacional" />
+    <div className="population-grid" ref={containerRef}>
+      <canvas ref={canvasRef} role="img" aria-label="Grilla poblacional" />
       <p className="population-grid-caption">
         Cada celda es un organismo, coloreado de rojo a verde según cuántas crías produjo en relación con el mejor
         organismo que tuvo esta corrida hasta ahora. Las celdas oscuras son hábitat vacío — un organismo murió y

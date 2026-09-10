@@ -32,7 +32,11 @@ export default function RunPanel({
       <h2>{title}</h2>
       {run.runId && (
         <p className="status-line">
-          Corrida <code>{run.runId}</code> — estado: <strong>{run.status}</strong>
+          Corrida{" "}
+          <code className="run-id" title={run.runId}>
+            {run.runId}
+          </code>{" "}
+          — estado: <strong>{run.status}</strong>
         </p>
       )}
       {run.errorMessage && <p className="error">{run.errorMessage}</p>}

@@ -183,6 +183,22 @@ describe("<App />", () => {
     expect(await screen.findByRole("button", { name: "Reiniciar corrida" })).toBeInTheDocument();
   });
 
+  it("rediseño responsive: el formulario colapsa (details) apenas arranca la primera corrida", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ runId: "run-collapse" }) }));
+
+    render(<App />);
+    const details = document.querySelector(".config-details") as HTMLDetailsElement;
+    expect(details.open).toBe(true); // abierto antes de arrancar cualquier corrida
+
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar corrida" }));
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    await waitFor(() => {
+      const detailsAfter = document.querySelector(".config-details") as HTMLDetailsElement;
+      expect(detailsAfter.open).toBe(false);
+    });
+  });
+
   it("muestra un mensaje de error si la creación de la corrida falla", async () => {
     vi.stubGlobal(
       "fetch",

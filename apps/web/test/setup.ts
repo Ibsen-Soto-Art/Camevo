@@ -13,7 +13,11 @@ import "@testing-library/jest-dom/vitest";
 HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   fillRect: vi.fn(),
   clearRect: vi.fn(),
+  strokeRect: vi.fn(),
+  setTransform: vi.fn(),
   fillStyle: "",
+  strokeStyle: "",
+  lineWidth: 1,
 })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
 afterEach(() => {

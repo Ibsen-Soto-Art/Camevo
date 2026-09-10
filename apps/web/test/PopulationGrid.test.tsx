@@ -46,6 +46,7 @@ function mockCanvasContext() {
   let currentLineWidth = 1;
   const ctx = {
     clearRect: vi.fn(),
+    setTransform: vi.fn(),
     fillRect: vi.fn((x: number, y: number, w: number, h: number) => {
       fills.push({ x, y, w, h, color: currentFillStyle });
     }),

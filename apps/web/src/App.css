@@ -10,6 +10,65 @@
   margin-top: -0.5rem;
 }
 
+.mode-select {
+  margin: 1.5rem 0 1rem;
+}
+
+.mode-select label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  gap: 0.25rem;
+  max-width: 320px;
+}
+
+.mode-select select {
+  padding: 0.4rem;
+  font-size: 1rem;
+}
+
+/*
+ * Rediseño responsive: dos columnas en desktop (controles a la
+ * izquierda, contenido a la derecha — lo que el usuario MANIPULA vs. lo
+ * que OBSERVA), una sola columna apilada en mobile/tablet angosto. Antes
+ * no existía ningún grid/flex a nivel de página — todo era un solo
+ * bloque centrado de arriba a abajo.
+ */
+.app-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .app-layout {
+    grid-template-columns: minmax(280px, 32%) 1fr;
+  }
+}
+
+.controls-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.config-details {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.config-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.25rem 0;
+}
+
+.config-details .run-form {
+  margin: 1rem 0 0;
+}
+
 .run-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -48,12 +107,79 @@
   color: #333;
 }
 
+/* El runId completo (un UUID) envolvía en 3 líneas en mobile — se trunca visualmente, el id completo sigue en el atributo title. */
+.run-id {
+  display: inline-block;
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 .error {
   color: #b00020;
 }
 
 .chart-container {
   margin-top: 1.5rem;
+}
+
+.playback-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.playback-controls h3 {
+  width: 100%;
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.playback-controls button {
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.playback-controls label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  gap: 0.25rem;
+}
+
+.saved-compare-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 1.5rem 0 1rem;
+}
+
+.saved-compare-header label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+  gap: 0.25rem;
+  flex: 1 1 260px;
+  /* Sin esto, el ancho intrínseco del <select> (texto largo de las
+     opciones, ver formatRunSummary) evita que el flex item se achique
+     por debajo de ese contenido — comportamiento por defecto de flexbox
+     (min-width:auto en los hijos) — y desborda en mobile. */
+  min-width: 0;
+}
+
+.saved-compare-header select {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.4rem;
+  font-size: 1rem;
 }
 
 .compare-grid {
@@ -63,7 +189,14 @@
   margin-top: 1rem;
 }
 
-@media (max-width: 800px) {
+/*
+ * 1200px, no 800px: con la columna de controles del rediseño responsive
+ * ocupando ~32% del viewport, dos paneles lado a lado en la columna
+ * derecha necesitan más ancho total de pantalla que antes para no verse
+ * apretados (antes los paneles ocupaban toda la página, ahora comparten
+ * espacio con la columna izquierda).
+ */
+@media (max-width: 1200px) {
   .compare-grid {
     grid-template-columns: 1fr;
   }
@@ -116,11 +249,15 @@
 
 .population-grid {
   margin-top: 1rem;
+  width: 100%;
 }
 
 .population-grid canvas {
+  /* El tamaño real (width/height + el estilo inline width/height en CSS
+     px) lo pone PopulationGrid.tsx vía ResizeObserver — max-width acá es
+     solo una red de seguridad por si el JS todavía no corrió. */
+  display: block;
   max-width: 100%;
-  height: auto;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
 }
