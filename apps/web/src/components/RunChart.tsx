@@ -135,13 +135,23 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
           />
           <Tooltip content={ChartTooltip} />
           <Legend />
+          {/*
+            RNF-004 (2ª verificación con persona real, "Cambio 2"): la
+            persona buscó los eventos catastróficos visualmente y no los
+            encontró — con stroke fino (1px default) y punteado chico
+            (2 2), esta línea se perdía entre las 5 líneas de colores
+            saturados del gráfico. Más gruesa, más sólida (dash más largo)
+            y un rojo más vívido para que lea como "marcador de alerta",
+            no como una grilla de fondo más.
+          */}
           {catastropheGenerations.map((generation) => (
             <ReferenceLine
               key={generation}
               x={generation}
               yAxisId="fitness"
-              stroke="#8b0000"
-              strokeDasharray="2 2"
+              stroke="#d90429"
+              strokeWidth={2.5}
+              strokeDasharray="6 3"
               ifOverflow="extendDomain"
             />
           ))}

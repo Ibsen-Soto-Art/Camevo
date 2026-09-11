@@ -161,7 +161,11 @@ describe("<PopulationGrid /> (RF-024)", () => {
       expect(strokes[0]?.lineWidth).toBeGreaterThan(0);
     });
 
-    it("el destello es de un solo frame: el snapshot SIGUIENTE sin evento no repite el borde", () => {
+    // RNF-004 (2ª verificación con persona real): el destello original
+    // duraba un solo frame (80ms a ritmo default) — medido, imperceptible
+    // en reproducción real. Ahora se mantiene CATASTROPHE_FLASH_HOLD_GENERATIONS
+    // generaciones desde el catastropheOccurred más reciente.
+    it("el borde persiste varias generaciones después del evento, no solo en la generación exacta", () => {
       const { strokes } = mockCanvasContext();
       const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
       const after = snapshot({ generation: 2, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
@@ -170,7 +174,29 @@ describe("<PopulationGrid /> (RF-024)", () => {
       expect(strokes).toHaveLength(1);
 
       rerender(<PopulationGrid snapshots={[event, after]} gridWidth={1} gridHeight={1} />);
-      expect(strokes).toHaveLength(1); // sigue en 1: el redibujado de "after" no agregó un borde nuevo
+      expect(strokes).toHaveLength(2); // sigue mostrándose: "after" está dentro de la ventana de persistencia
+    });
+
+    it("el borde deja de dibujarse una vez que pasó la ventana de persistencia", () => {
+      const { strokes } = mockCanvasContext();
+      const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
+      const farAfter = snapshot({ generation: 50, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
+
+      render(<PopulationGrid snapshots={[event, farAfter]} gridWidth={1} gridHeight={1} />);
+      expect(strokes).toHaveLength(0); // generación 50 está muy lejos del evento en generación 1
+    });
+
+    it("con dos eventos catastróficos, el borde se ancla siempre al más reciente, no al primero", () => {
+      const { strokes } = mockCanvasContext();
+      const firstEvent = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
+      const farAfterFirst = snapshot({ generation: 20, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
+      const secondEvent = snapshot({ generation: 21, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
+
+      const { rerender } = render(<PopulationGrid snapshots={[firstEvent, farAfterFirst]} gridWidth={1} gridHeight={1} />);
+      expect(strokes).toHaveLength(0); // ya pasó la ventana del primer evento
+
+      rerender(<PopulationGrid snapshots={[firstEvent, farAfterFirst, secondEvent]} gridWidth={1} gridHeight={1} />);
+      expect(strokes).toHaveLength(1); // el segundo evento reabre la ventana
     });
   });
 

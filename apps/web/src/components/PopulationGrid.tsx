@@ -6,6 +6,18 @@ const DEFAULT_DISPLAY_SIZE = 400;
 const MAX_DISPLAY_SIZE = 700;
 const CATASTROPHE_BORDER_COLOR = "#8b0000";
 const CATASTROPHE_BORDER_WIDTH = 8;
+/**
+ * RNF-004 (2ª verificación con persona real, "Cambio 2"): el destello
+ * original duraba UN frame (80ms a ritmo default) — medido, era
+ * imperceptible en reproducción real, aunque se viera grande en una
+ * captura fija. 8 generaciones, no más, no menos: el preset "Cambio
+ * climático acelerado" dispara catástrofes cada 10 generaciones
+ * (`FAST_CATASTROPHE.intervalGenerations`), así que 8 da ~5x más tiempo
+ * de exposición sin llegar a solaparse con el inicio del próximo evento
+ * (que reiniciaría la ventana igual, mostrándose como continuo en vez de
+ * como dos eventos distintos).
+ */
+const CATASTROPHE_FLASH_HOLD_GENERATIONS = 8;
 
 export interface PopulationGridProps {
   readonly snapshots: readonly GenerationSnapshot[];
@@ -110,6 +122,15 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
     return max;
   }, [snapshots]);
 
+  /** Generación del catastropheOccurred más reciente vista hasta ahora, o null si todavía no hubo ninguno. */
+  const lastCatastropheGeneration = useMemo(() => {
+    let last: number | null = null;
+    for (const snapshot of snapshots) {
+      if (snapshot.catastropheOccurred) last = snapshot.generation;
+    }
+    return last;
+  }, [snapshots]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !latest) return;
@@ -134,12 +155,16 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
       ctx.fillRect(organism.x * cellWidth, organism.y * cellHeight, cellWidth, cellHeight);
     }
 
-    // RF-015 (marcadores visuales): un "destello" de un solo frame — como
-    // cada snapshot nuevo redibuja la grilla completa desde cero (ver
-    // comentario de arriba), este borde aparece exactamente en el
-    // redibujado de la generación con `catastropheOccurred` y desaparece
-    // solo en el siguiente, sin necesidad de timers ni animación CSS.
-    if (latest.catastropheOccurred) {
+    // RF-015 (marcadores visuales): el borde se mantiene durante
+    // CATASTROPHE_FLASH_HOLD_GENERATIONS generaciones desde el
+    // catastropheOccurred más reciente, no solo en la generación exacta
+    // — como cada snapshot nuevo redibuja la grilla completa desde cero
+    // (ver comentario de arriba), esto simplemente significa "seguir
+    // dibujando el borde mientras estemos dentro de la ventana", sin
+    // necesidad de timers ni animación CSS.
+    const showCatastropheBorder =
+      lastCatastropheGeneration !== null && latest.generation - lastCatastropheGeneration < CATASTROPHE_FLASH_HOLD_GENERATIONS;
+    if (showCatastropheBorder) {
       ctx.strokeStyle = CATASTROPHE_BORDER_COLOR;
       ctx.lineWidth = CATASTROPHE_BORDER_WIDTH;
       ctx.strokeRect(
@@ -149,7 +174,7 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
         displaySize - CATASTROPHE_BORDER_WIDTH,
       );
     }
-  }, [latest, gridWidth, gridHeight, historicalMaxFitness, displaySize]);
+  }, [latest, gridWidth, gridHeight, historicalMaxFitness, displaySize, lastCatastropheGeneration]);
 
   if (!latest) {
     return null;
@@ -178,9 +203,9 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
       <p className="population-grid-caption">
         Cada celda es un organismo, coloreado de rojo a verde según cuántas crías produjo en relación con el mejor
         organismo que tuvo esta corrida hasta ahora. Las celdas oscuras son hábitat vacío — un organismo murió y
-        todavía no fue reemplazado. Un borde rojo alrededor de la grilla marca la generación exacta de un evento
-        catastrófico (RF-015) — dura solo esa generación, distinto de un clima que se pone desfavorable de forma
-        gradual (RF-011).
+        todavía no fue reemplazado. Un borde rojo alrededor de la grilla marca que hubo un evento catastrófico
+        (RF-015) recientemente — se mantiene varias generaciones para que no pase desapercibido, distinto de un
+        clima que se pone desfavorable de forma gradual (RF-011).
       </p>
     </div>
   );

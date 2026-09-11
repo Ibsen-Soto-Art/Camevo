@@ -14,10 +14,21 @@
   color: #142a1e;
 }
 
-.subtitle {
-  color: #555;
-  font-size: 1rem;
-  margin: 0.3rem 0 0.5rem;
+/* RNF-004 (2ª verificación con persona real): hero de 3 líneas cortas, pensado para caber sin scroll en mobile — de ahí line-height ajustado y margin chico, no un bloque de texto largo. */
+.hero {
+  margin: 0.4rem 0 1rem;
+}
+
+.hero-line {
+  margin: 0.15rem 0;
+  color: #333;
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.hero-cta {
+  font-weight: 700;
+  color: #142a1e;
 }
 
 /* Labels de controles diferenciados del contenido principal (que sigue en 1rem por defecto) — antes solo eran un poco más chicos (0.85rem); ahora también distintos en peso/color/tracking, no solo en tamaño. */

@@ -109,10 +109,16 @@ const SCENARIOS: readonly Scenario[] = [
   {
     id: "collapse",
     name: "Cambio climático acelerado",
+    // RNF-004 (2ª verificación con persona real, "Cambio 3"): la persona
+    // buscó los eventos catastróficos visualmente y no los encontró — no
+    // alcanza con que el resultado los mencione después, hay que avisar
+    // ANTES de que arranque la corrida qué buscar y dónde.
     narrative:
-      "Misma población, mismas reglas — pero ahora el clima cambia RÁPIDO. El fitness deja de mejorar y, en algún punto, la " +
-      "población entra en deuda de extinción (se debilita generación tras generación) hasta colapsar. No es que la selección " +
-      "natural 'falle': es que no le da tiempo de actuar antes de que el entorno vuelva a cambiar.",
+      "Misma población, mismas reglas — pero ahora el clima cambia RÁPIDO Y además ocurren eventos extremos periódicos " +
+      "(equivalentes a olas de calor o sequías masivas): vas a verlos como líneas verticales en el gráfico y un destello de " +
+      "borde rojo alrededor de la grilla. El fitness deja de mejorar y, en algún punto, la población entra en deuda de " +
+      "extinción (se debilita generación tras generación) hasta colapsar. No es que la selección natural 'falle': es que no " +
+      "le da tiempo de actuar antes de que el entorno vuelva a cambiar.",
     speed: "fast",
     reproducibilityMode: "reproducible",
   },
@@ -240,11 +246,25 @@ export default function App() {
         lee un visitante nuevo. Este subtítulo describe la ACCIÓN en
         lenguaje llano; los términos técnicos se ganan su lugar más
         adelante, cuando ya hay una corrida real que los sostiene.
+
+        RNF-004 (2ª verificación con persona real, "Cambio 1"): un solo
+        subtítulo no alcanzó — la persona percibió el proyecto como
+        orientado a investigadores, no a público general, y "casi no se
+        entendía para qué funciona la página". Reemplazado por un hero de
+        3 líneas cortas (qué es / para qué sirve / cómo empezar), lo
+        primero visible al abrir la página, antes de cualquier control
+        técnico — pensado para caber sin scroll en mobile (de ahí el
+        límite deliberado a 3 líneas, no un párrafo).
       */}
-      <p className="subtitle">
-        Controlá qué tan rápido cambia el clima y observá si la vida logra adaptarse — o si el cambio llega demasiado
-        rápido.
-      </p>
+      <div className="hero">
+        <p className="hero-line">
+          Camevo simula cómo evoluciona una población de organismos digitales cuando el clima cambia.
+        </p>
+        <p className="hero-line">
+          Para ver con tus propios ojos si la vida puede adaptarse — o si el cambio llega demasiado rápido.
+        </p>
+        <p className="hero-line hero-cta">Elegí un escenario y presioná "Iniciar corrida".</p>
+      </div>
 
       <div className="mode-select">
         <label>

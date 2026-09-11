@@ -199,9 +199,11 @@ describe("<App />", () => {
     });
   });
 
-  it("RNF-004 (re-auditoría): el subtítulo describe la acción en lenguaje llano, sin 'rescate evolutivo' ni 'deuda de extinción'", () => {
+  it("RNF-004 (2ª verificación con persona real): el hero explica qué es, para qué sirve y cómo empezar, en lenguaje llano", () => {
     render(<App />);
-    expect(screen.getByText(/controlá qué tan rápido cambia el clima/i)).toBeInTheDocument();
+    expect(screen.getByText(/simula cómo evoluciona una población de organismos digitales/i)).toBeInTheDocument();
+    expect(screen.getByText(/si la vida puede adaptarse/i)).toBeInTheDocument();
+    expect(screen.getByText(/elegí un escenario y presioná/i)).toBeInTheDocument();
     expect(screen.queryByText(/rescate evolutivo/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/deuda de extinción/i)).not.toBeInTheDocument();
   });
