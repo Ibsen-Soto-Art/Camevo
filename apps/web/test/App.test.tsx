@@ -199,6 +199,26 @@ describe("<App />", () => {
     });
   });
 
+  it("RNF-004 (re-auditoría): el subtítulo describe la acción en lenguaje llano, sin 'rescate evolutivo' ni 'deuda de extinción'", () => {
+    render(<App />);
+    expect(screen.getByText(/controlá qué tan rápido cambia el clima/i)).toBeInTheDocument();
+    expect(screen.queryByText(/rescate evolutivo/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/deuda de extinción/i)).not.toBeInTheDocument();
+  });
+
+  it("RNF-004 (re-auditoría): elegir un escenario preconfigurado colapsa el formulario, aunque no haya arrancado ninguna corrida", async () => {
+    render(<App />);
+    const details = document.querySelector(".config-details") as HTMLDetailsElement;
+    expect(details.open).toBe(true); // sin preset elegido (modo personalizado), sigue abierto como siempre
+
+    await userEvent.click(screen.getByRole("button", { name: "¿Puede la vida adaptarse?" }));
+
+    await waitFor(() => {
+      const detailsAfter = document.querySelector(".config-details") as HTMLDetailsElement;
+      expect(detailsAfter.open).toBe(false);
+    });
+  });
+
   it("muestra un mensaje de error si la creación de la corrida falla", async () => {
     vi.stubGlobal(
       "fetch",

@@ -214,22 +214,36 @@ export default function App() {
   const running = compareMode ? runA.status === "running" || runB.status === "running" : runSingle.status === "running";
 
   // RF-023/rediseño responsive: el formulario colapsa solo la PRIMERA vez
-  // que arranca una corrida — no es un booleano de estado nuevo, es un
-  // `key` derivado del runId que ya existe. Al cambiar de "sin corrida" a
-  // "con corrida", React remonta el <details> con `open` inicial en
-  // false; con la misma key en renders posteriores, `open` nunca vuelve a
-  // cambiar de valor, así que el usuario controla el toggle libremente
-  // sin que React le pelee los clicks (no hay riesgo de "fight" entre
-  // React y el DOM nativo porque nunca reafirmamos un `open` distinto sin
-  // también cambiar la key).
-  const configStartedKey = compareMode ? String(Boolean(runA.runId || runB.runId)) : String(Boolean(runSingle.runId));
+  // que arranca una corrida, o (RNF-004, re-auditoría) apenas se elige un
+  // escenario preconfigurado — no son booleanos de estado nuevos, es un
+  // `key` derivado de ambas cosas. Al cambiar de "sin corrida"/"sin
+  // preset" a "con corrida" o "con preset", React remonta el <details>
+  // con `open` inicial recalculado; con la misma key en renders
+  // posteriores, `open` nunca vuelve a cambiar de valor, así que el
+  // usuario controla el toggle libremente sin que React le pelee los
+  // clicks (no hay riesgo de "fight" entre React y el DOM nativo porque
+  // nunca reafirmamos un `open` distinto sin también cambiar la key). En
+  // modo comparación no hay presets, así que ese key/open sigue exactamente
+  // como antes.
+  const singleConfigOpen = !runSingle.runId && !selectedScenarioId;
+  const configStartedKey = compareMode
+    ? String(Boolean(runA.runId || runB.runId))
+    : `${String(Boolean(runSingle.runId))}-${selectedScenarioId ?? "custom"}`;
 
   return (
     <main className="camevo-app">
       <h1>Camevo</h1>
+      {/*
+        RNF-004 (re-auditoría): "rescate evolutivo" y "deuda de extinción" ya
+        aparecen con contexto en el panel explicativo después de la corrida
+        — no hacía falta repetirlos acá, sin explicación, en lo primero que
+        lee un visitante nuevo. Este subtítulo describe la ACCIÓN en
+        lenguaje llano; los términos técnicos se ganan su lugar más
+        adelante, cuando ya hay una corrida real que los sostiene.
+      */}
       <p className="subtitle">
-        Rescate evolutivo vs. deuda de extinción: mové la velocidad del cambio climático y observá si la población se
-        adapta o se estanca.
+        Controlá qué tan rápido cambia el clima y observá si la vida logra adaptarse — o si el cambio llega demasiado
+        rápido.
       </p>
 
       <div className="mode-select">
@@ -319,7 +333,11 @@ export default function App() {
       ) : (
         <div className="app-layout">
           <div className="controls-column">
-            <details className="config-details" key={configStartedKey} open={!(compareMode ? runA.runId || runB.runId : runSingle.runId)}>
+            <details
+              className="config-details"
+              key={configStartedKey}
+              open={compareMode ? !(runA.runId || runB.runId) : singleConfigOpen}
+            >
               <summary>Configuración de la corrida</summary>
               <form className="run-form" onSubmit={handleSubmit}>
                 <label>

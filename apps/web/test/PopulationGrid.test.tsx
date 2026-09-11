@@ -181,10 +181,19 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);
       const legend = within(container.querySelector(".population-grid-legend") as HTMLElement);
 
-      expect(legend.getByText("Fitness bajo")).toBeInTheDocument();
-      expect(legend.getByText("Fitness alto")).toBeInTheDocument();
+      expect(legend.getByText(/Fitness bajo/)).toBeInTheDocument();
+      expect(legend.getByText(/Fitness alto/)).toBeInTheDocument();
       expect(legend.getByText(/Hábitat vacío/i)).toBeInTheDocument();
       expect(legend.getByText(/Evento catastrófico/i)).toBeInTheDocument();
+    });
+
+    it("RNF-004 (re-auditoría): 'fitness' se define en lenguaje llano la primera vez que aparece en el flujo visual", () => {
+      mockCanvasContext();
+      const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
+      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);
+
+      expect(screen.getByText("Fitness bajo (pocas crías)")).toBeInTheDocument();
+      expect(screen.getByText("Fitness alto (muchas crías)")).toBeInTheDocument();
     });
 
     it("la barra de gradiente va de rojo (fitness bajo) a verde (fitness alto), igual que las celdas reales", () => {
@@ -202,7 +211,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);
 
-      expect(screen.getByText("Fitness alto")).toHaveClass("grid-legend-label-fitness-high");
+      expect(screen.getByText(/Fitness alto/)).toHaveClass("grid-legend-label-fitness-high");
     });
   });
 });

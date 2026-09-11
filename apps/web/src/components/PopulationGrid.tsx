@@ -160,10 +160,11 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
       <canvas ref={canvasRef} role="img" aria-label="Grilla poblacional" />
       <div className="population-grid-legend">
         <div className="grid-legend-item grid-legend-gradient">
-          <span className="grid-legend-label">Fitness bajo</span>
+          {/* RNF-004 (re-auditoría): "fitness" nunca se definía en texto plano en ningún punto del flujo principal — el tooltip lo explica, pero eso requiere que alguien piense en pasar el mouse. Acá, donde el usuario ya está mirando la grilla, es el lugar natural para la primera definición mínima. */}
+          <span className="grid-legend-label">Fitness bajo (pocas crías)</span>
           <span className="grid-legend-bar" style={{ background: `linear-gradient(to right, ${GRADIENT_CSS})` }} />
           {/* Ajuste 5: mismo azul (#1f77b4) que "Fitness promedio" en RunChart — puente visual entre las dos representaciones de la misma variable, sin tocar el gradiente rojo→verde de la grilla en sí. */}
-          <span className="grid-legend-label grid-legend-label-fitness-high">Fitness alto</span>
+          <span className="grid-legend-label grid-legend-label-fitness-high">Fitness alto (muchas crías)</span>
         </div>
         <div className="grid-legend-item">
           <span className="grid-legend-swatch" style={{ background: EMPTY_CELL_COLOR }} />

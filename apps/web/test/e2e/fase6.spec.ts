@@ -15,6 +15,17 @@ test("escenario preconfigurado autocompleta velocidad y muestra la narrativa", a
   await expect(page.getByLabel("Velocidad del cambio climático")).toHaveValue("slow");
 });
 
+test("RNF-004 (re-auditoría): elegir un escenario colapsa el formulario, y sigue siendo reabrible manualmente", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".config-details")).toHaveAttribute("open", "");
+
+  await page.getByRole("button", { name: "El punto de quiebre" }).click();
+  await expect(page.locator(".config-details")).not.toHaveAttribute("open", "");
+
+  await page.getByText("Configuración de la corrida").click();
+  await expect(page.locator(".config-details")).toHaveAttribute("open", "");
+});
+
 test("fuente de la tendencia climática: elegir 'historical' muestra la nota de NASA GISTEMP", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Fuente de la tendencia climática").selectOption("historical");
@@ -31,6 +42,8 @@ test("una corrida rápida que termina en extinción muestra la cita del IPCC AR6
 
   await page.goto("/");
   await page.getByRole("button", { name: "Cambio climático acelerado" }).click();
+  // RNF-004 (re-auditoría): elegir un preset colapsa el formulario — hay que reabrirlo para tocar campos individuales.
+  await page.getByText("Configuración de la corrida").click();
   await page.getByLabel("Generaciones").fill("200");
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
