@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PopulationGrid from "../src/components/PopulationGrid";
 import type { GenerationSnapshot } from "../src/lib/camevo-client";
@@ -171,6 +171,38 @@ describe("<PopulationGrid /> (RF-024)", () => {
 
       rerender(<PopulationGrid snapshots={[event, after]} gridWidth={1} gridHeight={1} />);
       expect(strokes).toHaveLength(1); // sigue en 1: el redibujado de "after" no agregó un borde nuevo
+    });
+  });
+
+  describe("leyenda visual (Ajuste 2, auditoría de interfaz post-producción)", () => {
+    it("muestra las tres referencias: gradiente de fitness, hábitat vacío y borde de catástrofe", () => {
+      mockCanvasContext();
+      const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);
+      const legend = within(container.querySelector(".population-grid-legend") as HTMLElement);
+
+      expect(legend.getByText("Fitness bajo")).toBeInTheDocument();
+      expect(legend.getByText("Fitness alto")).toBeInTheDocument();
+      expect(legend.getByText(/Hábitat vacío/i)).toBeInTheDocument();
+      expect(legend.getByText(/Evento catastrófico/i)).toBeInTheDocument();
+    });
+
+    it("la barra de gradiente va de rojo (fitness bajo) a verde (fitness alto), igual que las celdas reales", () => {
+      mockCanvasContext();
+      const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);
+
+      const bar = container.querySelector(".grid-legend-bar") as HTMLElement;
+      expect(bar.style.background).toContain("hsl(0, 70%, 45%)"); // mismo fitnessColor(0) que pinta las celdas
+      expect(bar.style.background).toContain("hsl(120, 70%, 45%)"); // mismo fitnessColor(1)
+    });
+
+    it("Ajuste 5: la etiqueta 'Fitness alto' usa el mismo azul (#1f77b4) que la línea de fitness de RunChart — puente visual entre ambas leyendas", () => {
+      mockCanvasContext();
+      const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
+      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);
+
+      expect(screen.getByText("Fitness alto")).toHaveClass("grid-legend-label-fitness-high");
     });
   });
 });

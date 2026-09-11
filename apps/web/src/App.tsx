@@ -226,7 +226,7 @@ export default function App() {
 
   return (
     <main className="camevo-app">
-      <h1>Camevo — Fase 3</h1>
+      <h1>Camevo</h1>
       <p className="subtitle">
         Rescate evolutivo vs. deuda de extinción: mové la velocidad del cambio climático y observá si la población se
         adapta o se estanca.

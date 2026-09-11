@@ -21,6 +21,17 @@ function fitnessColor(normalized: number): string {
 }
 
 /**
+ * Ajuste 2 (auditoría de interfaz post-producción): antes no había NINGÚN
+ * elemento visual de leyenda, solo el párrafo de texto de abajo — alguien
+ * sin conocimientos previos tenía que leer un párrafo entero para saber
+ * qué significa un color. Los 5 stops se generan con la MISMA función
+ * `fitnessColor` que pinta las celdas reales (no un gradiente CSS
+ * inventado aparte), así que la leyenda nunca puede desincronizarse de
+ * los colores que realmente se ven en la grilla.
+ */
+const GRADIENT_CSS = [0, 0.25, 0.5, 0.75, 1].map((t) => fitnessColor(t)).join(", ");
+
+/**
  * RF-024: grilla poblacional estilo Avida-ED. Canvas, no SVG — hasta 1600
  * celdas (grilla máxima 40x40) actualizándose en cada snapshot de
  * WebSocket harían que SVG reconciliara 1600 nodos DOM por generación;
@@ -147,6 +158,22 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
   return (
     <div className="population-grid" ref={containerRef}>
       <canvas ref={canvasRef} role="img" aria-label="Grilla poblacional" />
+      <div className="population-grid-legend">
+        <div className="grid-legend-item grid-legend-gradient">
+          <span className="grid-legend-label">Fitness bajo</span>
+          <span className="grid-legend-bar" style={{ background: `linear-gradient(to right, ${GRADIENT_CSS})` }} />
+          {/* Ajuste 5: mismo azul (#1f77b4) que "Fitness promedio" en RunChart — puente visual entre las dos representaciones de la misma variable, sin tocar el gradiente rojo→verde de la grilla en sí. */}
+          <span className="grid-legend-label grid-legend-label-fitness-high">Fitness alto</span>
+        </div>
+        <div className="grid-legend-item">
+          <span className="grid-legend-swatch" style={{ background: EMPTY_CELL_COLOR }} />
+          <span className="grid-legend-label">Hábitat vacío</span>
+        </div>
+        <div className="grid-legend-item">
+          <span className="grid-legend-swatch grid-legend-swatch-outline" style={{ borderColor: CATASTROPHE_BORDER_COLOR }} />
+          <span className="grid-legend-label">Evento catastrófico (borde)</span>
+        </div>
+      </div>
       <p className="population-grid-caption">
         Cada celda es un organismo, coloreado de rojo a verde según cuántas crías produjo en relación con el mejor
         organismo que tuvo esta corrida hasta ahora. Las celdas oscuras son hábitat vacío — un organismo murió y

@@ -1,9 +1,49 @@
 import { useMemo } from "react";
+import type { TooltipContentProps } from "recharts";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getCatastropheGenerations } from "../lib/catastrophe";
 import type { GenerationSnapshot } from "../lib/camevo-client";
 
 const CLIMATE_COLORS = ["#d62728", "#2ca02c", "#9467bd"];
+
+const FIXED_METRIC_DESCRIPTIONS: Record<string, string> = {
+  averageFitness: "Promedio de crías producidas por organismo — indica qué tan bien se está adaptando la población.",
+  geneticDiversity:
+    'Variación en los genomas de la población — alta diversidad significa más "material" disponible para la evolución.',
+};
+
+/** Cualquier dataKey que no sea una de las dos métricas fijas de arriba es un taskId climático (RF-022, dinámico según DEFAULT_TASKS). */
+function describeMetric(dataKey: string): string {
+  return (
+    FIXED_METRIC_DESCRIPTIONS[dataKey] ??
+    `Multiplicador de energía para organismos que resuelven la tarea ${dataKey} — cuando sube, esa habilidad es más valiosa para sobrevivir.`
+  );
+}
+
+/**
+ * Ajuste 3 (auditoría de interfaz post-producción): el tooltip default de
+ * Recharts solo mostraba nombre + valor numérico — sin significado para
+ * alguien sin conocimientos previos de qué es "Diversidad genética" o por
+ * qué "Clima: AND" sube y baja. Reemplaza el contenido del tooltip
+ * existente (no un panel aparte) agregando una descripción en lenguaje
+ * humano por línea, debajo del valor.
+ */
+export function ChartTooltip({ active, payload, label }: TooltipContentProps) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="chart-tooltip">
+      <p className="chart-tooltip-label">Generación {label}</p>
+      {payload.map((entry) => (
+        <div key={String(entry.dataKey)} className="chart-tooltip-entry">
+          <p className="chart-tooltip-name" style={{ color: entry.color }}>
+            {entry.name}: {typeof entry.value === "number" ? entry.value.toFixed(2) : entry.value}
+          </p>
+          <p className="chart-tooltip-description">{describeMetric(String(entry.dataKey))}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** Aplana los snapshots a filas {generation, averageFitness, geneticDiversity, [taskId]: multiplier} para Recharts. */
 function toChartRows(snapshots: readonly GenerationSnapshot[]): Record<string, number>[] {
@@ -56,31 +96,44 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   return (
     <div>
       {/*
-        left: 20, no 0 — el título rotado del eje Y izquierdo ("Fitness /
-        diversidad", position "insideLeft") se recorta contra el borde del
-        SVG sin este margen: medido con Playwright, el bounding box del
-        label empieza ~6-8px a la izquierda del borde del SVG en left:0, en
-        cualquier ancho de viewport probado (1280px y 420px, mismo déficit)
-        — no es un problema de layout responsive, es un margen fijo
-        insuficiente. El eje derecho ya tenía margen de sobra (right: 30) y
-        no lo necesitó.
+        Ajuste 1 (re-auditoría post-producción, ver docs/04-roadmap-fases.md):
+        el fix anterior (left:0→left:20) resolvió un déficit HORIZONTAL real
+        en el eje izquierdo, pero el recorte que seguía viéndose en
+        producción era VERTICAL, en ambos ejes — causa distinta, nunca antes
+        medida. Recharts centra el label rotado (`angle`, `text-anchor:
+        middle`) en el punto medio vertical del área del eje y lo extiende
+        por igual arriba y abajo desde ese punto; si la mitad de la longitud
+        renderizada del texto supera la distancia de ese centro al borde
+        superior del SVG (que se achica cuando la leyenda crece a 5 líneas,
+        o cuando el alto del gráfico baja a 320px en modo comparación), el
+        SVG recorta la mitad de arriba por su `overflow: hidden` default.
+        Medido con Playwright en los tres escenarios reales (sin corrida,
+        corrida con leyenda completa, comparación a 320px): con el texto
+        largo original el recorte iba de 13 a 111px según el escenario. Una
+        primera abreviación ("Fitness / div." / "Mult. climático") resolvió
+        los dos escenarios de 380px pero NO el de comparación a 320px
+        (seguía cortado 22-42px, medido) — el texto todavía era demasiado
+        largo para ese caso más ajustado. "Fitness" / "Clima" a secas sí da
+        margen de sobra en los tres (-24px / -36px en el peor caso,
+        confirmado): el significado completo ("diversidad", "climático")
+        ya no se pierde porque vive en la leyenda de abajo y en el tooltip
+        (Ajuste 3) — no hacía falta que también cupiera, rotado, en el
+        propio título del eje. Reafinar el margen de nuevo no se eligió
+        porque ya falló una vez al no generalizar a leyendas/alturas
+        distintas.
       */}
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartRows} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="generation" label={{ value: "Generación", position: "insideBottom", offset: -5 }} />
-          <YAxis
-            yAxisId="fitness"
-            domain={[0, "auto"]}
-            label={{ value: "Fitness / diversidad", angle: -90, position: "insideLeft" }}
-          />
+          <YAxis yAxisId="fitness" domain={[0, "auto"]} label={{ value: "Fitness", angle: -90, position: "insideLeft" }} />
           <YAxis
             yAxisId="climate"
             orientation="right"
             domain={[0, "auto"]}
-            label={{ value: "Multiplicador climático", angle: 90, position: "insideRight" }}
+            label={{ value: "Clima", angle: 90, position: "insideRight" }}
           />
-          <Tooltip />
+          <Tooltip content={ChartTooltip} />
           <Legend />
           {catastropheGenerations.map((generation) => (
             <ReferenceLine

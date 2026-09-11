@@ -1,8 +1,16 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import type { TooltipContentProps } from "recharts";
 import { describe, expect, it } from "vitest";
-import RunChart from "../src/components/RunChart";
+import RunChart, { ChartTooltip } from "../src/components/RunChart";
 import type { GenerationSnapshot } from "../src/lib/camevo-client";
 import { getCatastropheGenerations } from "../src/lib/catastrophe";
+
+/** Completa los campos de contexto de Recharts que ChartTooltip ignora, pero que el tipo TooltipContentProps exige. */
+function renderTooltip(payload: TooltipContentProps["payload"], label: number, active = true) {
+  return render(
+    <ChartTooltip active={active} coordinate={undefined} accessibilityLayer={false} activeIndex={undefined} payload={payload} label={label} />,
+  );
+}
 
 function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
   return {
@@ -55,5 +63,57 @@ describe("<RunChart /> — nota de la leyenda de eventos catastróficos (RF-015)
     const snapshots = [snapshot({ generation: 0 }), snapshot({ generation: 1, catastropheOccurred: true })];
     const { container } = render(<RunChart snapshots={snapshots} />);
     expect(container.textContent).toMatch(/evento catastrófico/i);
+  });
+});
+
+/**
+ * Ajuste 3 (auditoría de interfaz post-producción): el tooltip default de
+ * Recharts (nombre + valor numérico, sin significado) se reemplazó por
+ * `ChartTooltip`. Recharts necesita medición de layout SVG real
+ * (getBBox/getComputedTextLength) para activar el tooltip vía hover — no
+ * disponible en jsdom (ver el comentario de arriba) — así que se testea
+ * `ChartTooltip` directo, con el payload que Recharts le pasaría, en vez
+ * de simular el hover sobre el SVG completo.
+ */
+describe("<ChartTooltip /> — descripciones en lenguaje humano (Ajuste 3)", () => {
+  it("no renderiza nada si el tooltip no está activo", () => {
+    const { container } = renderTooltip(
+      [{ dataKey: "averageFitness", name: "Fitness promedio", value: 1.2, graphicalItemId: "a" }],
+      5,
+      false,
+    );
+    expect(container.textContent).toBe("");
+  });
+
+  it("fitness promedio: describe qué mide, no solo el número", () => {
+    renderTooltip([{ dataKey: "averageFitness", name: "Fitness promedio", value: 1.23, graphicalItemId: "a" }], 5);
+    expect(screen.getByText(/Fitness promedio: 1.23/)).toBeInTheDocument();
+    expect(screen.getByText(/crías producidas por organismo/i)).toBeInTheDocument();
+  });
+
+  it("diversidad genética: describe qué mide, no solo el número", () => {
+    renderTooltip(
+      [{ dataKey: "geneticDiversity", name: "Diversidad genética (aprox.)", value: 0.05, graphicalItemId: "b" }],
+      5,
+    );
+    expect(screen.getByText(/variación en los genomas/i)).toBeInTheDocument();
+  });
+
+  it("una línea de clima (dataKey dinámico, ej. 'AND'): describe la tarea específica por su id", () => {
+    renderTooltip([{ dataKey: "AND", name: "Clima: AND", value: 4.5, graphicalItemId: "c" }], 5);
+    expect(screen.getByText(/tarea AND/i)).toBeInTheDocument();
+    expect(screen.getByText(/más valiosa para sobrevivir/i)).toBeInTheDocument();
+  });
+
+  it("muestra una descripción por cada línea presente en el payload, no solo la primera", () => {
+    renderTooltip(
+      [
+        { dataKey: "averageFitness", name: "Fitness promedio", value: 1, graphicalItemId: "a" },
+        { dataKey: "NOT", name: "Clima: NOT", value: 2, graphicalItemId: "d" },
+      ],
+      7,
+    );
+    expect(screen.getByText(/crías producidas por organismo/i)).toBeInTheDocument();
+    expect(screen.getByText(/tarea NOT/i)).toBeInTheDocument();
   });
 });
