@@ -6,6 +6,44 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.14.0] — Cierre del cabo suelto de la Fase 5: prueba de carga real y decisión sobre Rust/WASM
+
+**Documentos afectados:** `04-roadmap-fases.md` (v1.5 → v1.6 — nueva sección "Cierre del
+cabo suelto de la Fase 5")
+
+### Changed
+- Se corrió, por primera vez de forma real (nunca se había hecho formalmente, solo
+  analizado en teoría), la prueba de carga contra el VPS de producción que la Fase 5 dejaba
+  pendiente para decidir si el motor necesita Rust/WASM. Con la evidencia medida: el motor
+  de simulación domina el trabajo en JS puro (~94-95 %, frente a ~5-6 % de la
+  serialización JSON, ~15-17x), pero el costo real dominante del pipeline por generación
+  resultó ser la escritura a Postgres (~64 %, por un `await` bloqueante antes del envío por
+  WebSocket) — algo que ninguna de las dos hipótesis originales (cómputo vs. serialización)
+  cubría.
+- Confirmada la causalidad (mismo criterio de aislamiento que la Fase 4) con un experimento
+  controlado: desbloquear `saveSnapshot` del camino crítico (patrón fire-and-forget con
+  `pendingWrites`) mejoró la cola de la distribución (p95 ~17 %, peor caso ~2x) sin cambiar
+  el promedio, consistente en dos repeticiones. El fix se implementó de forma permanente en
+  `apps/api/src/api/ws/live-run.ts`, con logging garantizado de cualquier fallo de escritura
+  (nunca se pierde un snapshot en silencio) y cobertura de pruebas dedicada.
+- La réplica final contra el código ya desplegado en producción no reprodujo con claridad la
+  mejora vista en el experimento aislado; se descartó explícitamente, con evidencia directa
+  (no solo grep del código), que esto se debiera a un bundle compilado viejo. Se documenta
+  honestamente como evidencia insuficiente para confirmar la magnitud de la optimización en
+  producción real no controlada, sin que eso invalide la causalidad ya confirmada en el
+  experimento aislado.
+- **Decisión de alcance:** Rust/WASM no se justifica — en ningún escenario medido el motor
+  fue el cuello de botella real. Queda anotada como optimización futura mucho más barata,
+  si alguna vez hiciera falta, limitar la frecuencia de transmisión de la grilla poblacional
+  completa (RF-024) frente a solo métricas agregadas bajo alta concurrencia.
+
+**Motivo:** cerrar con evidencia real (no "parece que anda bien") el único cabo suelto que
+quedaba abierto de la Fase 5, ahora que el sistema incluye la Fase 4 (eventos catastróficos)
+y la grilla poblacional en vivo (RF-024) de la ronda de mejoras de interfaz — ambos cambios
+posteriores al análisis teórico original que motivó dejar esta prueba pendiente.
+
+---
+
 ## [v0.13.0] — RF-024 completo: grilla poblacional, con visibilidad nueva para RF-008/RF-015
 
 **Documentos afectados:** `02-requisitos.md` (v1.2 → v1.3 — nota de cierre junto a RF-024,

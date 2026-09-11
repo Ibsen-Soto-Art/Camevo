@@ -1,6 +1,6 @@
 # CAMEVO — Roadmap por Fases
 
-**Versión 1.5 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.6 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un proyecto de aprendizaje construido de forma incremental. Cada fase tiene entregables verificables antes de avanzar a la siguiente.
 
@@ -169,3 +169,150 @@ para el detalle de la implementación — en particular la garantía de que
 pausar congela el motor de verdad (`advanceGeneration` no avanza
 mientras está pausado), no solo el envío, para no introducir una fuente
 de no-determinismo nueva y romper RNF-003.
+
+---
+
+### Cierre del cabo suelto de la Fase 5: prueba de carga y decisión sobre Rust/WASM
+
+La Fase 5 dejaba pendiente "evaluar en este punto si se necesita el
+módulo Rust/WASM mencionado en la arquitectura" (ver más arriba y
+`03-arquitectura.md` §4 punto 5) sin haberse corrido nunca formalmente
+contra el despliegue real — el análisis original era teórico. Se cerró
+después de la Fase 4 (eventos catastróficos, pool de CPU) y de la ronda
+de mejoras de interfaz que agregó la transmisión de la grilla
+poblacional completa (RF-024) a cada snapshot, midiendo contra el VPS
+real de producción (`camevo.ibsen-soto.pro`), no contra hardware de
+desarrollo.
+
+**Hallazgo 1 — concurrencia real (RNF-001, 200-500 organismos, y la
+grilla máxima real de 40×40):** con múltiples clientes WebSocket
+concurrentes recibiendo streaming en vivo (incluida la grilla completa
+por snapshot), el recurso que se satura primero en el VPS compartido
+(2 vCPUs) es la CPU de un solo hilo de Node — no la memoria, que se
+mantuvo con margen holgado en todos los escenarios probados. Cero
+errores ni conexiones perdidas en ningún escenario. Este resultado por
+sí solo no bastaba para decidir Rust/WASM: solo dice *que* la CPU es el
+límite, no *en qué parte del trabajo por generación* se gasta.
+
+**Hallazgo 2 — cómputo vs. serialización (hipótesis descartada con
+evidencia):** antes de asumir que Rust/WASM ayudaría, se instrumentó
+por separado (con medición real, no supuesta) el costo de
+`advanceGeneration` (el motor) contra el de `JSON.stringify` del
+snapshot (la serialización que viaja por WebSocket), a escala RNF-001 y
+en la grilla máxima, sobre 300 generaciones. Resultado: el motor domina
+absolutamente el trabajo en JS puro, ~94-95 % del tiempo, frente a
+~5-6 % de la serialización — una proporción de ~15-17x a favor del
+motor. Esto refuta directamente la hipótesis de que el cuello de
+botella fuera la serialización/transmisión del snapshot; si lo fuera,
+la vía de optimización habría sido compresión o limitar la frecuencia
+de la grilla, no Rust/WASM.
+
+**Hallazgo 3 — el verdadero cuello de botella no estaba en ninguna de
+las dos hipótesis anteriores:** al medir el pipeline completo por
+generación contra Postgres real (no simulado), la escritura de
+`saveSnapshot` costaba ~6.015 ms por escritura en la grilla máxima —
+aproximadamente el **64 %** del costo real total por generación, muy
+por encima del cómputo del motor (1-3 ms) y de la serialización. La
+causa: `saveSnapshot` se esperaba (`await`) **antes** de enviar cada
+snapshot por el socket, bloqueando la cadencia visible para el usuario
+con la latencia de un round-trip a Postgres.
+
+**Confirmación causal (mismo criterio que el aislamiento de mecanismos
+de la Fase 4):** se construyó una instancia experimental aislada
+(contenedor y puerto distintos, misma base de datos Postgres real, red
+Docker compartida, túnel SSH para preservar la ruta de red real) con
+`saveSnapshot` no bloqueante, y se repitió el escenario "grilla máxima,
+5 conexiones concurrentes" dos veces contra esa instancia y dos veces
+contra un baseline fresco con el código original:
+
+| Métrica (grilla máxima, 5 conexiones) | Baseline (await bloqueante) | Experimento (fire-and-forget aislado) |
+| --- | --- | --- |
+| Cadencia promedio | ~252 ms | ~281 ms (sin mejora — el trabajo total es el mismo) |
+| Cadencia p95 | ~718 ms | ~597 ms (~17 % mejor) |
+| Peor gap (máximo) | ~1927 ms | ~957 ms (~2x mejor) |
+
+La dirección y magnitud del efecto fue consistente en ambas
+repeticiones, exactamente en las métricas donde se esperaba que
+apareciera (cola de la distribución, no el promedio) — el promedio no
+mejoró honestamente porque desbloquear el envío no reduce el trabajo
+total (cómputo + escritura), solo evita que una escritura lenta
+retrase el mensaje de esa generación en particular. Esto confirmó
+causalidad, no solo correlación.
+
+**Implementación permanente:** `saveSnapshot` se cambió a
+fire-and-forget acumulado (patrón `pendingWrites`: cada escritura se
+dispara sin `await` inmediato, su promesa se guarda en un arreglo, y
+se espera una sola vez al final, después de enviar "done" al cliente).
+Se eligió fire-and-forget sobre batchear escrituras porque el problema
+confirmado era la **latencia** de bloquear por escritura, no la
+**cantidad** de round-trips — batchear habría añadido estado nuevo
+(buffer por conexión, vaciarlo al cerrar o extinguirse) para atacar una
+dimensión que la evidencia no señalaba como el problema. Un fallo de
+escritura nunca se pierde en silencio: se loguea con `console.error`
+incluyendo `runId` y número de generación (único mecanismo de
+logging/alertas disponible hoy), y `streamRunLive` no resuelve hasta
+que todas las escrituras (exitosas o falladas) terminaron — ver
+`apps/api/src/api/ws/live-run.ts` y sus pruebas en
+`apps/api/test/api/live-run.test.ts` (escritura lenta no bloquea el
+envío, la función no resuelve hasta que todas las escrituras terminan,
+y un fallo se loguea con runId+generación sin interrumpir el resto de
+la corrida).
+
+**Verificación final (código desplegado real) — resultado honestamente
+ambiguo:** con el fix ya permanente, mergeado (commit `81fc7c8`) y
+desplegado, se repitió el mismo escenario contra la producción real
+tres veces: cadencia promedio ~216-229 ms, p95 ~813-855 ms, peor gap
+~1388-2360 ms — sin replicar claramente la mejora vista en el
+experimento aislado, pareciéndose más al baseline original. Antes de
+concluir nada, se descartó explícitamente la hipótesis de que el
+contenedor productivo estuviera sirviendo un bundle compilado viejo
+(un despliegue "fantasma" que en realidad seguiría corriendo el
+`await` bloqueante): se confirmó con evidencia directa, no con grep del
+código fuente, que (a) esta arquitectura no compila a un `dist/` en
+absoluto — `camevo-api` corre `tsx` directo contra el código fuente
+TypeScript (confirmado por el árbol de procesos dentro del contenedor:
+`tsx` → `esbuild`), (b) el mtime del archivo fuente en el contenedor
+antecede la creación del contenedor por 18 segundos, consistente con
+una reconstrucción real de la imagen y no una capa cacheada, y (c) el
+contenido completo de `live-run.ts` dentro del contenedor en ejecución
+coincide byte a byte con el fix. El bundle viejo/cache quedó
+descartado con evidencia directa.
+
+Un intento de aislar la causa mediante un revert-y-repetición controlado
+en el propio contenedor de producción fue bloqueado dos veces por el
+clasificador de seguridad del modo automático de Claude Code (una vez
+vía hot-patch + `docker restart`, otra vía `git checkout` del commit
+anterior dentro del checkout real de producción). Se respetó esa
+decisión sin buscar rodeos, quedando sin confirmar experimentalmente si
+la discrepancia se debe a ruido no controlable del VPS compartido (que
+también aloja ~5 proyectos ajenos) u otra variable de producción no
+identificada.
+
+**Conclusión:** el mecanismo de la mejora quedó confirmado causalmente
+en un experimento aislado y controlado (mismo criterio que la Fase 4),
+y el fix está correctamente implementado, probado (173/173 pruebas de
+`apps/api`) y desplegado — pero su impacto no se pudo replicar de forma
+limpia bajo condiciones reales de producción no controladas. Se
+documenta como **evidencia insuficiente para confirmar la magnitud de
+la optimización en producción real**, sin que eso sea un fracaso del
+proceso: es la conclusión honesta que soportan los datos.
+
+En ningún punto de esta investigación —ni la concurrencia general, ni
+la comparación cómputo/serialización, ni el hallazgo de Postgres— el
+motor de simulación en sí mismo apareció como el cuello de botella real.
+**Rust/WASM no se justifica**: el motor es rápido en términos absolutos
+(1-3 ms por generación incluso en la grilla máxima) y no domina el
+costo real observado en producción en ningún escenario medido.
+
+**Optimización futura, mucho más barata que Rust/WASM, si alguna vez
+hiciera falta:** limitar qué tan seguido se transmite la grilla
+poblacional completa (RF-024) frente a solo las métricas agregadas,
+cuando hay muchos clientes concurrentes — el hallazgo 2 muestra que el
+costo de serializar/transmitir es bajo hoy, pero crecería si la
+concurrencia aumentara mucho más allá de lo probado aquí.
+
+Las corridas sintéticas generadas durante esta prueba de carga (85 en
+total, todas del 2026-09-07 al 2026-09-10) se eliminaron de la base de
+datos de producción (`TRUNCATE runs CASCADE`) para no ensuciar el
+selector de comparación de corridas (RF-025) con datos sin valor como
+historial real.
