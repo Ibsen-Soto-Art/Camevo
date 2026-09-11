@@ -3,7 +3,7 @@ import "./App.css";
 import RunPanel from "./components/RunPanel";
 import { useHistoricalRun } from "./hooks/useHistoricalRun";
 import { useRun, type RunHandle } from "./hooks/useRun";
-import { listRuns, type ClimateChangeSpeed, type RunFormValues, type RunSummary } from "./lib/camevo-client";
+import { listRuns, type ClimateChangeSpeed, type ClimateTrendSource, type RunFormValues, type RunSummary } from "./lib/camevo-client";
 import { effectiveLineageCount } from "./lib/lineage";
 
 /**
@@ -55,6 +55,8 @@ interface BaseFormValues {
   readonly placementMode: RunFormValues["placementMode"];
   readonly reproducibilityMode: RunFormValues["reproducibilityMode"];
   readonly climateVarianceAmplitude: number;
+  /** Fase 6: curva sintética (default) o anclada a datos reales de NASA GISTEMP. */
+  readonly climateTrendSource: ClimateTrendSource;
   /** RF-023: ritmo inicial de reproducción — ajustable después en curso vía PlaybackControls. */
   readonly msPerGeneration: number;
 }
@@ -67,8 +69,64 @@ const DEFAULT_BASE_FORM: BaseFormValues = {
   placementMode: "near-parent",
   reproducibilityMode: "reproducible",
   climateVarianceAmplitude: 0.15,
+  climateTrendSource: "synthetic",
   msPerGeneration: 80,
 };
+
+/**
+ * Fase 6 (RNF-004): en vez de que un usuario sin conocimientos previos
+ * llegue a un formulario vacío, tres escenarios con narrativa en lenguaje
+ * de divulgación autocompletan velocidad climática + modo de
+ * repetibilidad — el resto de los campos queda en su default ya validado
+ * (Fases 3/4, ver config-request.ts). No son modos nuevos: son solo
+ * presets sobre el mismo formulario, editable después de elegir uno.
+ *
+ * "El punto de quiebre" usa `reproducibilityMode: "experimental"` (semilla
+ * aleatoria) a propósito, a diferencia de los otros dos: la velocidad
+ * "moderate" es justo la que la Fase 3 midió en el límite entre rescate y
+ * estancamiento (fitness tardío/temprano ≈1.01-1.03) — el punto es que el
+ * resultado varíe de corrida en corrida, no que sea reproducible.
+ */
+interface Scenario {
+  readonly id: string;
+  readonly name: string;
+  readonly narrative: string;
+  readonly speed: ClimateChangeSpeed;
+  readonly reproducibilityMode: BaseFormValues["reproducibilityMode"];
+}
+
+const SCENARIOS: readonly Scenario[] = [
+  {
+    id: "rescue",
+    name: "¿Puede la vida adaptarse?",
+    narrative:
+      "Vas a ver una población de organismos digitales enfrentar un cambio climático LENTO: el entorno cambia, pero da tiempo. " +
+      "Prestá atención al gráfico de fitness — si sube con las generaciones, eso es rescate evolutivo: la selección natural " +
+      "encontró, dentro de la variación genética que la población ya tenía, a los mejor adaptados al nuevo clima.",
+    speed: "slow",
+    reproducibilityMode: "reproducible",
+  },
+  {
+    id: "collapse",
+    name: "Cambio climático acelerado",
+    narrative:
+      "Misma población, mismas reglas — pero ahora el clima cambia RÁPIDO. El fitness deja de mejorar y, en algún punto, la " +
+      "población entra en deuda de extinción (se debilita generación tras generación) hasta colapsar. No es que la selección " +
+      "natural 'falle': es que no le da tiempo de actuar antes de que el entorno vuelva a cambiar.",
+    speed: "fast",
+    reproducibilityMode: "reproducible",
+  },
+  {
+    id: "tipping-point",
+    name: "El punto de quiebre",
+    narrative:
+      "Esta es la velocidad más interesante: ni tan lenta como para garantizar adaptación, ni tan rápida como para garantizar " +
+      "colapso. Es el punto donde el resultado depende de la suerte de esta corrida en particular — probá iniciarla varias " +
+      "veces y vas a ver que no siempre termina igual. Esa incertidumbre no es un defecto del simulador: es real.",
+    speed: "moderate",
+    reproducibilityMode: "experimental",
+  },
+];
 
 /**
  * RF-008: el formulario no tiene todavía un control para numAncestors
@@ -96,6 +154,15 @@ export default function App() {
   const [speedSingle, setSpeedSingle] = useState<ClimateChangeSpeed>("moderate");
   const [speedA, setSpeedA] = useState<ClimateChangeSpeed>("slow");
   const [speedB, setSpeedB] = useState<ClimateChangeSpeed>("fast");
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(null);
+  const selectedScenario = SCENARIOS.find((s) => s.id === selectedScenarioId) ?? null;
+
+  function applyScenario(scenario: Scenario) {
+    setBase({ ...base, reproducibilityMode: scenario.reproducibilityMode });
+    setSpeedSingle(scenario.speed);
+    setClimateEnabled(true);
+    setSelectedScenarioId(scenario.id);
+  }
 
   const runSingle = useRun();
   const runA = useRun();
@@ -175,6 +242,28 @@ export default function App() {
           </select>
         </label>
       </div>
+
+      {mode === "single" && (
+        <div className="scenario-picker">
+          <p className="form-note">
+            Si no sabés por dónde empezar, elegí uno de estos tres escenarios — cada uno autocompleta la configuración y te
+            explica qué vas a ver y por qué importa. Podés seguir ajustando cualquier valor después.
+          </p>
+          <div className="scenario-cards">
+            {SCENARIOS.map((scenario) => (
+              <button
+                key={scenario.id}
+                type="button"
+                className={`scenario-card${scenario.id === selectedScenarioId ? " selected" : ""}`}
+                onClick={() => applyScenario(scenario)}
+              >
+                {scenario.name}
+              </button>
+            ))}
+          </div>
+          {selectedScenario && <p className="scenario-narrative">{selectedScenario.narrative}</p>}
+        </div>
+      )}
 
       {mode === "saved-compare" ? (
         <>
@@ -322,7 +411,14 @@ export default function App() {
                 {mode === "single" && (
                   <>
                     <label className="checkbox">
-                      <input type="checkbox" checked={climateEnabled} onChange={(e) => setClimateEnabled(e.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={climateEnabled}
+                        onChange={(e) => {
+                          setClimateEnabled(e.target.checked);
+                          setSelectedScenarioId(null);
+                        }}
+                      />
                       Módulo climático activo
                     </label>
                     {climateEnabled && (
@@ -335,7 +431,10 @@ export default function App() {
                       Velocidad del cambio climático
                       <select
                         value={speedSingle}
-                        onChange={(e) => setSpeedSingle(e.target.value as ClimateChangeSpeed)}
+                        onChange={(e) => {
+                          setSpeedSingle(e.target.value as ClimateChangeSpeed);
+                          setSelectedScenarioId(null);
+                        }}
                         disabled={!climateEnabled}
                       >
                         {SPEED_OPTIONS.map((opt) => (
@@ -345,6 +444,24 @@ export default function App() {
                         ))}
                       </select>
                     </label>
+                    <label>
+                      Fuente de la tendencia climática
+                      <select
+                        value={base.climateTrendSource}
+                        onChange={(e) => setBase({ ...base, climateTrendSource: e.target.value as ClimateTrendSource })}
+                        disabled={!climateEnabled}
+                      >
+                        <option value="synthetic">Sintética (onda paramétrica)</option>
+                        <option value="historical">Datos reales (NASA GISTEMP, 1880-2025)</option>
+                      </select>
+                    </label>
+                    {climateEnabled && base.climateTrendSource === "historical" && (
+                      <p className="form-note">
+                        La curva sigue la anomalía de temperatura global real medida por NASA GISTEMP — incluida la
+                        aceleración del calentamiento desde ~1980. En este modo, todas las tareas comparten la misma curva
+                        (con datos reales solo existe un clima, no uno distinto por tarea).
+                      </p>
+                    )}
                   </>
                 )}
 

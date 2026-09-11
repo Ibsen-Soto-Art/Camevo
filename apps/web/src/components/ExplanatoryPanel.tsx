@@ -103,6 +103,16 @@ export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, s
           capaz de resolver una tarea; el resto, genomas base sin ventaja) — la "capacidad adaptativa con la que
           partió" mencionada arriba se refiere exactamente a esto, no a algo que la población desarrolló sola.
         </p>
+        <p className="panel-source">
+          Esto es una simulación simplificada, no una predicción — pero el riesgo que ilustra es real: el IPCC
+          proyecta que, en ecosistemas terrestres, entre el 3% y el 14% de las especies evaluadas enfrentarían riesgo
+          MUY alto de extinción (equivalente a "en peligro crítico") con un calentamiento global de 1.5°C, subiendo a
+          3-18% a 2°C.{" "}
+          <em>
+            Fuente: IPCC, Sexto Informe de Evaluación (AR6), Grupo de Trabajo II, Resumen para Responsables de
+            Políticas (2022), sección B.4.1, p. 14.
+          </em>
+        </p>
       </div>
     );
   }

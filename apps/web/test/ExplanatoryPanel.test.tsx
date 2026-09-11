@@ -48,6 +48,22 @@ describe("<ExplanatoryPanel /> — Fase 4: colapso/extinción tienen prioridad s
     expect(screen.queryByText(/rescate evolutivo/i)).not.toBeInTheDocument();
   });
 
+  it("población extinguida: cita al IPCC AR6 (2022) con la fuente exacta, no un dato sin verificar", () => {
+    const snapshots = [...risingSnapshots(), snapshot({ generation: 8, populationSize: 0, averageFitness: 0, extinct: true })];
+    render(<ExplanatoryPanel climateEnabled climateChangeSpeed="fast" snapshots={snapshots} numAncestors={1} />);
+
+    expect(screen.getByText(/3% y el 14%/i)).toBeInTheDocument();
+    expect(screen.getByText(/IPCC.*AR6.*2022/i)).toBeInTheDocument();
+    // Otros desenlaces (rescate, estancamiento, nearExtinct) no deben mostrar esta cita — es específica de extinción real.
+  });
+
+  it("nearExtinct (no extinción total): NO muestra la cita del IPCC — es específica del desenlace de extinción real", () => {
+    const snapshots = [...risingSnapshots(), snapshot({ generation: 8, populationSize: 3, nearExtinct: true })];
+    render(<ExplanatoryPanel climateEnabled climateChangeSpeed="fast" snapshots={snapshots} numAncestors={1} />);
+
+    expect(screen.queryByText(/IPCC/i)).not.toBeInTheDocument();
+  });
+
   it("cuasi-extinción sostenida: reporta la población actual, y aclara que no es extinción total", () => {
     const snapshots = [...risingSnapshots(), snapshot({ generation: 8, populationSize: 7, nearExtinct: true })];
     render(<ExplanatoryPanel climateEnabled climateChangeSpeed="fast" snapshots={snapshots} numAncestors={1} />);

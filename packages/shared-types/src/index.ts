@@ -21,6 +21,16 @@ export type ReproducibilityMode = "reproducible" | "experimental";
  */
 export type ClimateChangeSpeed = "slow" | "moderate" | "fast";
 
+/**
+ * Fase 6: fuente de la tendencia climática de fondo. "synthetic" (default)
+ * es la onda senoidal paramétrica de siempre; "historical" la reemplaza por
+ * la serie real de anomalía de temperatura global anual de NASA GISTEMP
+ * (1880-presente) — ver apps/api/src/climate/policy/gistemp-annual-anomaly.ts
+ * para la fuente exacta y apps/api/src/climate/policy/historical.ts para el
+ * mapeo generación→año.
+ */
+export type ClimateTrendSource = "synthetic" | "historical";
+
 /** Nivel de suministro vigente de un recurso/tarea en una generación (RF-019, RF-011). */
 export interface ResourceSupply {
   readonly taskId: string;
@@ -103,6 +113,8 @@ export interface CreateRunRequest {
   readonly climateChangeSpeed?: ClimateChangeSpeed;
   /** RF-013: 0-0.5 aprox., independiente de climateChangeSpeed. */
   readonly climateVarianceAmplitude?: number;
+  /** Fase 6. Default "synthetic" — ver ClimateTrendSource. */
+  readonly climateTrendSource?: ClimateTrendSource;
   /**
    * RF-023: ritmo inicial de reproducción (ms entre snapshots
    * transmitidos), ajustable después en curso vía `ControlMessage`

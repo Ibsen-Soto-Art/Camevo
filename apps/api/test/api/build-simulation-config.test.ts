@@ -105,4 +105,25 @@ describe("buildSimulationConfig", () => {
     expect(adapted?.[1]).toMatchObject({ opcode: "nand", reg: "A" });
     expect(adapted?.[2]).toMatchObject({ opcode: "io", reg: "A" });
   });
+
+  it("Fase 6: sin climateTrendSource, el default es 'synthetic' (compatibilidad hacia atrás)", () => {
+    const persisted = samplePersistedConfig({ climateEnabled: true });
+    expect(persisted.climateTrendSource).toBe("synthetic");
+
+    const config = buildSimulationConfig(persisted);
+    expect(config.climate?.trendSource).toBe("synthetic");
+  });
+
+  it("Fase 6: climateTrendSource 'historical' se propaga a ClimatePolicyConfig junto con updates como totalGenerations", () => {
+    const persisted = samplePersistedConfig({ climateEnabled: true, climateTrendSource: "historical", updates: 777 });
+    const config = buildSimulationConfig(persisted);
+
+    expect(config.climate?.trendSource).toBe("historical");
+    expect(config.climate?.totalGenerations).toBe(777);
+  });
+
+  it("Fase 6: un climateTrendSource inválido se rechaza igual que un climateChangeSpeed inválido", () => {
+    const parsed = parseCreateRunRequest({ climateTrendSource: "made-up" as never });
+    expect("errors" in parsed).toBe(true);
+  });
 });

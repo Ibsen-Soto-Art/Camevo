@@ -2,6 +2,7 @@ import type { ControlMessage, CreateRunRequest, GetRunResponse, ListRunsResponse
 
 export type {
   ClimateChangeSpeed,
+  ClimateTrendSource,
   ControlMessage,
   GenerationSnapshot,
   GetRunResponse,
@@ -34,6 +35,7 @@ export type RunFormValues = Required<
     | "climateEnabled"
     | "climateChangeSpeed"
     | "climateVarianceAmplitude"
+    | "climateTrendSource"
     | "msPerGeneration"
   >
 >;

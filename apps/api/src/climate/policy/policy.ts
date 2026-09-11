@@ -1,3 +1,4 @@
+import { historicalTrendUnit } from "./historical";
 import { deterministicUnit } from "./noise";
 import { ClimateParameters, ClimatePolicyConfig, ResourceSupply } from "./types";
 
@@ -12,11 +13,20 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Tendencia (onda senoidal, con fase propia) + varianza (ruido
- * determinista) sobre [min, max] — la misma fórmula para cualquier
- * cosa que climate/policy haga oscilar: recursos por tarea (RF-011) o
- * el pool de CPU global (RF-014). `key` distingue la fuente de ruido
- * (p. ej. el id de la tarea, o `"__pool__"` para el pool).
+ * Tendencia + varianza (ruido determinista) sobre [min, max] — la misma
+ * fórmula para cualquier cosa que climate/policy haga oscilar: recursos
+ * por tarea (RF-011) o el pool de CPU global (RF-014). `key` distingue la
+ * fuente de ruido (p. ej. el id de la tarea, o `"__pool__"` para el pool).
+ *
+ * Fase 6 (`trendSource: "historical"`): la tendencia deja de ser la onda
+ * senoidal con fase propia por tarea y pasa a ser la serie real de
+ * anomalía de temperatura global de NASA GISTEMP (ver historical.ts). Al
+ * haber UNA sola curva real (no una por tarea), `phase` se ignora en este
+ * modo — todos los recursos se mueven sincronizados con el mismo clima
+ * real, a diferencia del desfase deliberado del modo sintético. Es una
+ * simplificación honesta (solo existe una curva real), no un atajo: se
+ * decidió así, en vez de inventar un desfase artificial sobre datos
+ * reales, para no falsear la fuente.
  */
 function oscillate(
   generation: number,
@@ -27,7 +37,10 @@ function oscillate(
   max: number,
 ): number {
   const range = max - min;
-  const trendUnit = (Math.sin(TWO_PI * (generation / config.trendPeriodGenerations) + phase) + 1) / 2;
+  const trendUnit =
+    config.trendSource === "historical"
+      ? historicalTrendUnit(generation, config.totalGenerations ?? config.trendPeriodGenerations)
+      : (Math.sin(TWO_PI * (generation / config.trendPeriodGenerations) + phase) + 1) / 2;
   const noiseUnit = deterministicUnit(config.seed, generation, key) * 2 - 1;
   return clamp(min + trendUnit * range + noiseUnit * config.varianceAmplitude * range, min, max);
 }

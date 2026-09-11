@@ -1,4 +1,4 @@
-import type { ClimateChangeSpeed, CreateRunRequest, PersistedRunConfig } from "@camevo/shared-types";
+import type { ClimateChangeSpeed, ClimateTrendSource, CreateRunRequest, PersistedRunConfig } from "@camevo/shared-types";
 import { ClimatePolicyConfig } from "../../climate/policy/types";
 import { Genome, createNotSolvingGenome, createUniformGenome } from "../../engine/organism/genome";
 import { PlacementMode } from "../../engine/population/placement";
@@ -51,6 +51,7 @@ const DEFAULTS = {
   climateEnabled: true,
   climateChangeSpeed: "moderate" as ClimateChangeSpeed,
   climateVarianceAmplitude: 0.15,
+  climateTrendSource: "synthetic" as ClimateTrendSource,
   msPerGeneration: 80,
 };
 
@@ -94,6 +95,14 @@ function validationErrors(body: CreateRunRequestBody): string[] {
     errors.push('climateChangeSpeed debe ser "slow", "moderate" o "fast"');
   }
 
+  if (
+    body.climateTrendSource !== undefined &&
+    body.climateTrendSource !== "synthetic" &&
+    body.climateTrendSource !== "historical"
+  ) {
+    errors.push('climateTrendSource debe ser "synthetic" o "historical"');
+  }
+
   return errors;
 }
 
@@ -127,6 +136,7 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
   const climateEnabled = (body.climateEnabled as boolean | undefined) ?? DEFAULTS.climateEnabled;
   const climateChangeSpeed = (body.climateChangeSpeed as ClimateChangeSpeed | undefined) ?? DEFAULTS.climateChangeSpeed;
   const climateVarianceAmplitude = (body.climateVarianceAmplitude as number | undefined) ?? DEFAULTS.climateVarianceAmplitude;
+  const climateTrendSource = (body.climateTrendSource as ClimateTrendSource | undefined) ?? DEFAULTS.climateTrendSource;
   const msPerGeneration = (body.msPerGeneration as number | undefined) ?? DEFAULTS.msPerGeneration;
 
   if (numAncestors > gridWidth * gridHeight) {
@@ -149,6 +159,7 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
     climateEnabled,
     climateChangeSpeed,
     climateVarianceAmplitude,
+    climateTrendSource,
   });
   const seed = resolveSeed(reproducibilityMode, fingerprint);
 
@@ -165,6 +176,7 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
     climateEnabled,
     climateChangeSpeed,
     climateVarianceAmplitude,
+    climateTrendSource,
     msPerGeneration,
     seed,
   };
@@ -248,6 +260,8 @@ function buildClimateConfig(persisted: PersistedRunConfig): ClimatePolicyConfig 
     seed: persisted.seed,
     trendPeriodGenerations: climateChangeSpeedToPeriod(persisted.climateChangeSpeed, persisted.updates),
     varianceAmplitude: persisted.climateVarianceAmplitude,
+    trendSource: persisted.climateTrendSource,
+    totalGenerations: persisted.updates,
     resources: DEFAULT_TASKS.map((task) => ({
       taskId: task.id,
       minMultiplier: 1,

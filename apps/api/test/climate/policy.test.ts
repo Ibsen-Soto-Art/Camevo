@@ -129,3 +129,48 @@ describe("getClimateParameters — RF-014 (pool de CPU global, separado de los r
     expect(diverged).toBe(true);
   });
 });
+
+describe("getClimateParameters — Fase 6 (trendSource: historical)", () => {
+  it("sin trendSource (u omitido), el comportamiento sintético de siempre no cambia", () => {
+    const config = baseConfig(7);
+    expect(sequence(config, 50)).toEqual(sequence({ ...config, trendSource: "synthetic" }, 50));
+  });
+
+  it("con trendSource historical, todas las tareas se mueven sincronizadas (una sola curva real, no una por tarea)", () => {
+    const config: ClimatePolicyConfig = {
+      ...baseConfig(7),
+      varianceAmplitude: 0,
+      trendSource: "historical",
+      totalGenerations: 100,
+    };
+    // Normalizado a [0,1] sobre el rango propio de cada recurso ((valor-min)/(max-min),
+    // no simplemente valor/max — los `min` no son 0 en baseConfig), deberían coincidir
+    // exactamente: sin fase propia ni ruido, las tres comparten la misma forma real.
+    const bounds = { NOT: { min: 1, max: 4 }, AND: { min: 1, max: 8 }, OR: { min: 1, max: 8 } };
+    for (const params of sequence(config, 100)) {
+      const normalized = params.resources.map((r) => {
+        const { min, max } = bounds[r.taskId as keyof typeof bounds];
+        return (r.rewardMultiplier - min) / (max - min);
+      });
+      expect(normalized[0]).toBeCloseTo(normalized[1]!, 6);
+      expect(normalized[0]).toBeCloseTo(normalized[2]!, 6);
+    }
+  });
+
+  it("con trendSource historical, el resultado difiere del sintético para la misma config (usa una fuente de tendencia distinta)", () => {
+    const historical = sequence({ ...baseConfig(7), varianceAmplitude: 0, trendSource: "historical", totalGenerations: 300 }, 300);
+    const synthetic = sequence({ ...baseConfig(7), varianceAmplitude: 0 }, 300);
+    expect(historical).not.toEqual(synthetic);
+  });
+
+  it("se mantiene dentro de los límites de cada recurso, igual que en modo sintético", () => {
+    const config: ClimatePolicyConfig = { ...baseConfig(7), trendSource: "historical", totalGenerations: 200 };
+    for (const params of sequence(config, 200)) {
+      for (const resource of params.resources) {
+        const bounds = config.resources.find((r) => r.taskId === resource.taskId);
+        expect(resource.rewardMultiplier).toBeGreaterThanOrEqual(bounds!.minMultiplier);
+        expect(resource.rewardMultiplier).toBeLessThanOrEqual(bounds!.maxMultiplier);
+      }
+    }
+  });
+});

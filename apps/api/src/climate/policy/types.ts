@@ -1,6 +1,6 @@
-import type { ResourceSupply } from "@camevo/shared-types";
+import type { ClimateTrendSource, ResourceSupply } from "@camevo/shared-types";
 
-export type { ResourceSupply };
+export type { ClimateTrendSource, ResourceSupply };
 
 export interface ResourceBounds {
   readonly taskId: string;
@@ -29,6 +29,14 @@ export interface ClimatePolicyConfig {
   /** Fracción del rango [minMultiplier, maxMultiplier] que puede añadir/quitar el ruido. */
   readonly varianceAmplitude: number;
   readonly resourcePool?: ResourcePoolBounds;
+  /** Fase 6: fuente de la tendencia. Default "synthetic" (onda senoidal) si se omite. */
+  readonly trendSource?: ClimateTrendSource;
+  /**
+   * Generaciones totales de la corrida (persisted.updates) — solo lo usa
+   * `trendSource: "historical"` para mapear generación→año real (ver
+   * historical.ts). Irrelevante con la tendencia sintética.
+   */
+  readonly totalGenerations?: number;
 }
 
 export interface ClimateParameters {
