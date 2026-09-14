@@ -1,8 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { TooltipContentProps } from "recharts";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getCatastropheGenerations } from "../lib/catastrophe";
 import type { GenerationSnapshot } from "../lib/camevo-client";
+
+type TooltipPayloadEntry = NonNullable<TooltipContentProps["payload"]>[number];
 
 const CLIMATE_COLORS = ["#d62728", "#2ca02c", "#9467bd"];
 
@@ -60,6 +62,36 @@ function toChartRows(snapshots: readonly GenerationSnapshot[]): Record<string, n
   });
 }
 
+/**
+ * Ajuste 1 (re-auditoría post-producción): reconstruye a mano el mismo
+ * `payload` que Recharts le pasaría a un tooltip flotante, a partir de
+ * una fila ya aplanada — así el panel externo de abajo puede reusar
+ * `ChartTooltip` tal cual (mismo componente, mismas descripciones), sin
+ * depender del tooltip flotante de Recharts para nada.
+ */
+function buildHoverPayload(row: Record<string, number>, climateTaskIds: readonly string[]): TooltipPayloadEntry[] {
+  const entries: TooltipPayloadEntry[] = [
+    { dataKey: "averageFitness", name: "Fitness promedio", value: row.averageFitness, color: "#1f77b4", graphicalItemId: "averageFitness" },
+    {
+      dataKey: "geneticDiversity",
+      name: "Diversidad genética (aprox.)",
+      value: row.geneticDiversity,
+      color: "#ff7f0e",
+      graphicalItemId: "geneticDiversity",
+    },
+  ];
+  climateTaskIds.forEach((taskId, index) => {
+    entries.push({
+      dataKey: taskId,
+      name: `Clima: ${taskId}`,
+      value: row[taskId],
+      color: CLIMATE_COLORS[index % CLIMATE_COLORS.length],
+      graphicalItemId: taskId,
+    });
+  });
+  return entries;
+}
+
 export interface RunChartProps {
   readonly snapshots: readonly GenerationSnapshot[];
   readonly height?: number;
@@ -93,6 +125,9 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   // una cantidad de líneas que vaya a saturar el gráfico.
   const catastropheGenerations = useMemo(() => getCatastropheGenerations(snapshots), [snapshots]);
 
+  const [hoveredGeneration, setHoveredGeneration] = useState<number | null>(null);
+  const hoveredRow = hoveredGeneration === null ? null : chartRows.find((row) => row.generation === hoveredGeneration);
+
   return (
     <div>
       {/*
@@ -123,9 +158,30 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
         distintas.
       */}
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={chartRows} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
+        <LineChart
+          data={chartRows}
+          margin={{ top: 10, right: 30, left: 20, bottom: 0 }}
+          onMouseMove={(state) => {
+            if (state?.activeLabel !== undefined) setHoveredGeneration(Number(state.activeLabel));
+          }}
+          onMouseLeave={() => setHoveredGeneration(null)}
+        >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="generation" label={{ value: "Generación", position: "insideBottom", offset: -5 }} />
+          {/*
+            Ajuste 4 (auditoría de interfaz, ronda 3): el label "Generación"
+            como "insideBottom" del eje X y la leyenda de abajo competían
+            por un presupuesto de espacio vertical FIJO (~29.5px, medido)
+            entre el fondo del área de líneas y el techo de la leyenda —
+            ni `margin.bottom` en el LineChart ni `wrapperStyle` en el
+            Legend lo cambiaron (probado con valores grandes, efecto cero).
+            Con el label de 24px de alto, no quedaba margen para separar
+            ambos lados al menos 8px cada uno bajo ningún reparto. Se saca
+            el label del `<svg>` (mismo principio que el panel de hover del
+            Ajuste 1: la geometría interna de Recharts es frágil para texto
+            custom) y se renderiza como texto HTML plano debajo del
+            gráfico, con margen CSS normal — ver `.chart-x-axis-label`.
+          */}
+          <XAxis dataKey="generation" />
           <YAxis yAxisId="fitness" domain={[0, "auto"]} label={{ value: "Fitness", angle: -90, position: "insideLeft" }} />
           <YAxis
             yAxisId="climate"
@@ -133,7 +189,24 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             domain={[0, "auto"]}
             label={{ value: "Clima", angle: 90, position: "insideRight" }}
           />
-          <Tooltip content={ChartTooltip} />
+          {/*
+            Ajuste 1 (auditoría de interfaz post-producción): el tooltip
+            flotante de Recharts tapaba justo las líneas que el usuario
+            quería ver — con las 5 métricas activas, el cuadro de
+            descripciones (ver ChartTooltip) es alto y ancho, y sigue al
+            cursor sobre el propio SVG. En vez de reposicionarlo dentro del
+            SVG (ninguna esquina queda libre de forma confiable con datos
+            que ocupan todo el rango 0-1 o 0-16), se suprime el cuadro
+            flotante (`content={() => null}`, se mantiene la línea guía del
+            cursor) y el detalle se levanta a un panel HTML fijo debajo del
+            gráfico (`chart-hover-panel`, fuera del `<svg>` — nunca puede
+            tapar una línea) usando `onMouseMove`/`onMouseLeave` del propio
+            LineChart + los datos que el componente ya tiene (`chartRows`),
+            reconstruyendo el mismo payload que Recharts le pasaría
+            (`buildHoverPayload`) para reusar `ChartTooltip` sin duplicar
+            el markup ni las descripciones.
+          */}
+          <Tooltip content={() => null} cursor={{ stroke: "#999", strokeDasharray: "3 3" }} />
           <Legend />
           {/*
             RNF-004 (2ª verificación con persona real, "Cambio 2"): la
@@ -188,6 +261,23 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
           ))}
         </LineChart>
       </ResponsiveContainer>
+      <p className="chart-x-axis-label">Generación</p>
+      <div className="chart-hover-panel">
+        {hoveredRow ? (
+          <ChartTooltip
+            active
+            payload={buildHoverPayload(hoveredRow, climateTaskIds)}
+            label={hoveredRow.generation}
+            coordinate={undefined}
+            accessibilityLayer={false}
+            activeIndex={undefined}
+          />
+        ) : (
+          <p className="chart-tooltip chart-hover-placeholder">
+            Pasá el mouse sobre el gráfico para ver el detalle de cada línea en esa generación.
+          </p>
+        )}
+      </div>
       <p className="chart-caption">
         La diversidad genética es una aproximación: compara genomas por posición sin alinearlos, así que una parte del
         número (hasta ~27% de una diferencia real comparable, medido) puede venir de que los genomas tienen distinta

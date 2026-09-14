@@ -327,6 +327,19 @@
   line-height: 1.4;
 }
 
+/* Ajuste 4 (auditoría de interfaz, ronda 3): "Generación" salió del <svg> — el espacio entre el label insideBottom y la leyenda era un presupuesto fijo de Recharts que ningún margin/wrapperStyle lograba agrandar. Texto plano, margen CSS normal. */
+.chart-x-axis-label {
+  margin: 0.5rem 0 0;
+  text-align: center;
+  color: #666;
+  font-size: 0.82rem;
+}
+
+/* Ajuste 1 (auditoría de interfaz post-producción): ya no es un tooltip flotante de Recharts — es un panel fijo debajo del gráfico (ver RunChart.tsx), así que nunca puede tapar una línea. */
+.chart-hover-panel {
+  margin-top: 0.9rem;
+}
+
 .chart-tooltip {
   max-width: 280px;
   padding: 0.6rem 0.7rem;
@@ -335,6 +348,12 @@
   border-radius: 4px;
   font-size: 0.8rem;
   white-space: normal;
+}
+
+.chart-hover-placeholder {
+  margin: 0;
+  color: #888;
+  font-style: italic;
 }
 
 .chart-tooltip-label {
@@ -363,7 +382,7 @@
 }
 
 .chart-caption {
-  margin-top: 0.4rem;
+  margin-top: 0.6rem;
   color: #777;
   font-size: 0.78rem;
   line-height: 1.35;
@@ -376,6 +395,12 @@
   width: 100%;
 }
 
+.population-grid-canvas-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
 .population-grid canvas {
   /* El tamaño real (width/height + el estilo inline width/height en CSS
      px) lo pone PopulationGrid.tsx vía ResizeObserver — max-width acá es
@@ -384,6 +409,22 @@
   max-width: 100%;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
+}
+
+/* Ajuste 2 (segunda ronda de re-auditoría): reemplaza el borde rojo perimetral — el overlay del canvas (ver PopulationGrid.tsx) ya cubre toda la grilla, este texto nombra el evento explícitamente encima de ese overlay. */
+.catastrophe-event-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  border-radius: 6px;
+  text-align: center;
+  pointer-events: none;
 }
 
 .population-grid-legend {
@@ -425,11 +466,6 @@
   height: 14px;
   border-radius: 3px;
   flex-shrink: 0;
-}
-
-.grid-legend-swatch-outline {
-  background: transparent;
-  border: 2px solid;
 }
 
 .population-grid-caption {

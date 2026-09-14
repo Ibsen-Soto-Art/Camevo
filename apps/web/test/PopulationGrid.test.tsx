@@ -28,30 +28,15 @@ interface FillRectCall {
   color: string;
 }
 
-interface StrokeRectCall {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  color: string;
-  lineWidth: number;
-}
-
-/** Mock de canvas propio (no el no-op global de test/setup.ts): registra cada fillRect/strokeRect con el estilo vigente en ese momento. */
+/** Mock de canvas propio (no el no-op global de test/setup.ts): registra cada fillRect con el estilo vigente en ese momento. */
 function mockCanvasContext() {
   const fills: FillRectCall[] = [];
-  const strokes: StrokeRectCall[] = [];
   let currentFillStyle = "";
-  let currentStrokeStyle = "";
-  let currentLineWidth = 1;
   const ctx = {
     clearRect: vi.fn(),
     setTransform: vi.fn(),
     fillRect: vi.fn((x: number, y: number, w: number, h: number) => {
       fills.push({ x, y, w, h, color: currentFillStyle });
-    }),
-    strokeRect: vi.fn((x: number, y: number, w: number, h: number) => {
-      strokes.push({ x, y, w, h, color: currentStrokeStyle, lineWidth: currentLineWidth });
     }),
     set fillStyle(value: string) {
       currentFillStyle = value;
@@ -59,21 +44,9 @@ function mockCanvasContext() {
     get fillStyle() {
       return currentFillStyle;
     },
-    set strokeStyle(value: string) {
-      currentStrokeStyle = value;
-    },
-    get strokeStyle() {
-      return currentStrokeStyle;
-    },
-    set lineWidth(value: number) {
-      currentLineWidth = value;
-    },
-    get lineWidth() {
-      return currentLineWidth;
-    },
   };
   HTMLCanvasElement.prototype.getContext = vi.fn(() => ctx) as unknown as typeof HTMLCanvasElement.prototype.getContext;
-  return { fills, strokes };
+  return { fills };
 }
 
 describe("<PopulationGrid /> (RF-024)", () => {
@@ -143,65 +116,77 @@ describe("<PopulationGrid /> (RF-024)", () => {
     expect(organismColor).toContain("hsl(120"); // hue=120 = verde puro, extremo saludable de la escala
   });
 
-  describe("destello de borde en eventos catastróficos (RF-015)", () => {
-    it("sin catastropheOccurred, no dibuja ningún borde", () => {
-      const { strokes } = mockCanvasContext();
+  describe("overlay de evento catastrófico (RF-015, Ajuste 2 — segunda ronda)", () => {
+    // El borde perimetral rojo se reemplazó por un overlay ámbar sobre TODA
+    // la grilla (fillRect, no strokeRect) + un texto flotante en el DOM —
+    // ver el comentario de CATASTROPHE_OVERLAY_COLOR en PopulationGrid.tsx
+    // para el porqué del color: el rojo ya significaba "fitness bajo".
+    it("sin catastropheOccurred, no pinta el overlay ni muestra el texto del evento", () => {
+      const { fills } = mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);
-      expect(strokes).toHaveLength(0);
+
+      // fondo + 1 organismo, nada más — ningún fillRect extra de overlay.
+      expect(fills).toHaveLength(2);
+      expect(screen.queryByText(/Evento catastrófico — gen/)).not.toBeInTheDocument();
     });
 
-    it("con catastropheOccurred=true en el último snapshot, dibuja un borde alrededor de todo el canvas", () => {
-      const { strokes } = mockCanvasContext();
+    it("con catastropheOccurred=true en el último snapshot, pinta un overlay ámbar sobre toda la grilla y muestra el texto", () => {
+      const { fills } = mockCanvasContext();
       const before = snapshot({ generation: 0, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
       render(<PopulationGrid snapshots={[before, event]} gridWidth={1} gridHeight={1} />);
 
-      expect(strokes).toHaveLength(1);
-      expect(strokes[0]?.lineWidth).toBeGreaterThan(0);
+      // fondo + 1 organismo + el overlay del evento (el último fillRect).
+      expect(fills).toHaveLength(3);
+      const overlayFill = fills.at(-1)!;
+      expect(overlayFill.color).toMatch(/245,\s*158,\s*11/); // rgba(245, 158, 11, ...) = #f59e0b, ámbar
+      expect(overlayFill.w).toBeGreaterThan(0); // cubre TODO el canvas, no un borde delgado
+
+      expect(screen.getByText(/Evento catastrófico — gen 1/)).toBeInTheDocument();
     });
 
     // RNF-004 (2ª verificación con persona real): el destello original
     // duraba un solo frame (80ms a ritmo default) — medido, imperceptible
-    // en reproducción real. Ahora se mantiene CATASTROPHE_FLASH_HOLD_GENERATIONS
+    // en reproducción real. Se mantiene CATASTROPHE_FLASH_HOLD_GENERATIONS
     // generaciones desde el catastropheOccurred más reciente.
-    it("el borde persiste varias generaciones después del evento, no solo en la generación exacta", () => {
-      const { strokes } = mockCanvasContext();
+    it("el overlay persiste varias generaciones después del evento, no solo en la generación exacta", () => {
+      mockCanvasContext();
       const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
       const after = snapshot({ generation: 2, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
 
       const { rerender } = render(<PopulationGrid snapshots={[event]} gridWidth={1} gridHeight={1} />);
-      expect(strokes).toHaveLength(1);
+      expect(screen.getByText(/Evento catastrófico — gen 1/)).toBeInTheDocument();
 
       rerender(<PopulationGrid snapshots={[event, after]} gridWidth={1} gridHeight={1} />);
-      expect(strokes).toHaveLength(2); // sigue mostrándose: "after" está dentro de la ventana de persistencia
+      expect(screen.getByText(/Evento catastrófico — gen 1/)).toBeInTheDocument(); // "after" está dentro de la ventana de persistencia
     });
 
-    it("el borde deja de dibujarse una vez que pasó la ventana de persistencia", () => {
-      const { strokes } = mockCanvasContext();
+    it("el overlay deja de mostrarse una vez que pasó la ventana de persistencia", () => {
+      mockCanvasContext();
       const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
       const farAfter = snapshot({ generation: 50, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
 
       render(<PopulationGrid snapshots={[event, farAfter]} gridWidth={1} gridHeight={1} />);
-      expect(strokes).toHaveLength(0); // generación 50 está muy lejos del evento en generación 1
+      expect(screen.queryByText(/Evento catastrófico — gen/)).not.toBeInTheDocument(); // generación 50 está muy lejos del evento en generación 1
     });
 
-    it("con dos eventos catastróficos, el borde se ancla siempre al más reciente, no al primero", () => {
-      const { strokes } = mockCanvasContext();
+    it("con dos eventos catastróficos, el overlay se ancla siempre al más reciente, no al primero", () => {
+      mockCanvasContext();
       const firstEvent = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
       const farAfterFirst = snapshot({ generation: 20, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       const secondEvent = snapshot({ generation: 21, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
 
       const { rerender } = render(<PopulationGrid snapshots={[firstEvent, farAfterFirst]} gridWidth={1} gridHeight={1} />);
-      expect(strokes).toHaveLength(0); // ya pasó la ventana del primer evento
+      expect(screen.queryByText(/Evento catastrófico — gen/)).not.toBeInTheDocument(); // ya pasó la ventana del primer evento
 
       rerender(<PopulationGrid snapshots={[firstEvent, farAfterFirst, secondEvent]} gridWidth={1} gridHeight={1} />);
-      expect(strokes).toHaveLength(1); // el segundo evento reabre la ventana
+      expect(screen.getByText(/Evento catastrófico — gen 21/)).toBeInTheDocument(); // el segundo evento reabre la ventana, con SU generación
     });
   });
 
   describe("leyenda visual (Ajuste 2, auditoría de interfaz post-producción)", () => {
-    it("muestra las tres referencias: gradiente de fitness, hábitat vacío y borde de catástrofe", () => {
+    it("muestra las tres referencias: gradiente de fitness, hábitat vacío y evento catastrófico", () => {
       mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} />);

@@ -4,8 +4,18 @@ import type { GenerationSnapshot } from "../lib/camevo-client";
 const EMPTY_CELL_COLOR = "#2a2a2a";
 const DEFAULT_DISPLAY_SIZE = 400;
 const MAX_DISPLAY_SIZE = 700;
-const CATASTROPHE_BORDER_COLOR = "#8b0000";
-const CATASTROPHE_BORDER_WIDTH = 8;
+/**
+ * Ajuste 2 (segunda ronda de re-auditoría de interfaz): el borde rojo
+ * perimetral (versión anterior) competía visualmente con las celdas
+ * rojas de fitness bajo — mismo lenguaje de color para dos cosas
+ * distintas. Ámbar no aparece en ningún otro lugar de la UI (la escala
+ * de fitness es roja→verde, hue 0-120; ámbar es hue ~38), así que un
+ * overlay de este color no puede confundirse con "fitness bajo" bajo
+ * ninguna lectura.
+ */
+const CATASTROPHE_OVERLAY_COLOR = "#f59e0b";
+/** Mismo #f59e0b, semi-transparente — para el fill del canvas (la leyenda usa el color sólido). */
+const CATASTROPHE_OVERLAY_FILL = "rgba(245, 158, 11, 0.35)";
 /**
  * RNF-004 (2ª verificación con persona real, "Cambio 2"): el destello
  * original duraba UN frame (80ms a ritmo default) — medido, era
@@ -131,6 +141,20 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
     return last;
   }, [snapshots]);
 
+  // RF-015 (marcadores visuales): el overlay se mantiene durante
+  // CATASTROPHE_FLASH_HOLD_GENERATIONS generaciones desde el
+  // catastropheOccurred más reciente, no solo en la generación exacta —
+  // como cada snapshot nuevo redibuja la grilla completa desde cero (ver
+  // comentario de la función de dibujo), esto simplemente significa
+  // "seguir mostrando el overlay mientras estemos dentro de la ventana",
+  // sin necesidad de timers ni animación CSS. Cubre TODA la grilla (no
+  // un borde delgado) para que sea inequívoco: un borde perimetral podía
+  // perderse contra celdas rojas de fitness bajo cerca del margen.
+  const showCatastropheOverlay =
+    latest !== undefined &&
+    lastCatastropheGeneration !== null &&
+    latest.generation - lastCatastropheGeneration < CATASTROPHE_FLASH_HOLD_GENERATIONS;
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !latest) return;
@@ -155,26 +179,11 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
       ctx.fillRect(organism.x * cellWidth, organism.y * cellHeight, cellWidth, cellHeight);
     }
 
-    // RF-015 (marcadores visuales): el borde se mantiene durante
-    // CATASTROPHE_FLASH_HOLD_GENERATIONS generaciones desde el
-    // catastropheOccurred más reciente, no solo en la generación exacta
-    // — como cada snapshot nuevo redibuja la grilla completa desde cero
-    // (ver comentario de arriba), esto simplemente significa "seguir
-    // dibujando el borde mientras estemos dentro de la ventana", sin
-    // necesidad de timers ni animación CSS.
-    const showCatastropheBorder =
-      lastCatastropheGeneration !== null && latest.generation - lastCatastropheGeneration < CATASTROPHE_FLASH_HOLD_GENERATIONS;
-    if (showCatastropheBorder) {
-      ctx.strokeStyle = CATASTROPHE_BORDER_COLOR;
-      ctx.lineWidth = CATASTROPHE_BORDER_WIDTH;
-      ctx.strokeRect(
-        CATASTROPHE_BORDER_WIDTH / 2,
-        CATASTROPHE_BORDER_WIDTH / 2,
-        displaySize - CATASTROPHE_BORDER_WIDTH,
-        displaySize - CATASTROPHE_BORDER_WIDTH,
-      );
+    if (showCatastropheOverlay) {
+      ctx.fillStyle = CATASTROPHE_OVERLAY_FILL;
+      ctx.fillRect(0, 0, displaySize, displaySize);
     }
-  }, [latest, gridWidth, gridHeight, historicalMaxFitness, displaySize, lastCatastropheGeneration]);
+  }, [latest, gridWidth, gridHeight, historicalMaxFitness, displaySize, showCatastropheOverlay]);
 
   if (!latest) {
     return null;
@@ -182,7 +191,12 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
 
   return (
     <div className="population-grid" ref={containerRef}>
-      <canvas ref={canvasRef} role="img" aria-label="Grilla poblacional" />
+      <div className="population-grid-canvas-wrap">
+        <canvas ref={canvasRef} role="img" aria-label="Grilla poblacional" />
+        {showCatastropheOverlay && (
+          <div className="catastrophe-event-banner">⚡ Evento catastrófico — gen {lastCatastropheGeneration}</div>
+        )}
+      </div>
       <div className="population-grid-legend">
         <div className="grid-legend-item grid-legend-gradient">
           {/* RNF-004 (re-auditoría): "fitness" nunca se definía en texto plano en ningún punto del flujo principal — el tooltip lo explica, pero eso requiere que alguien piense en pasar el mouse. Acá, donde el usuario ya está mirando la grilla, es el lugar natural para la primera definición mínima. */}
@@ -196,14 +210,14 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
           <span className="grid-legend-label">Hábitat vacío</span>
         </div>
         <div className="grid-legend-item">
-          <span className="grid-legend-swatch grid-legend-swatch-outline" style={{ borderColor: CATASTROPHE_BORDER_COLOR }} />
-          <span className="grid-legend-label">Evento catastrófico (borde)</span>
+          <span className="grid-legend-swatch" style={{ background: CATASTROPHE_OVERLAY_COLOR }} />
+          <span className="grid-legend-label">Evento catastrófico</span>
         </div>
       </div>
       <p className="population-grid-caption">
         Cada celda es un organismo, coloreado de rojo a verde según cuántas crías produjo en relación con el mejor
         organismo que tuvo esta corrida hasta ahora. Las celdas oscuras son hábitat vacío — un organismo murió y
-        todavía no fue reemplazado. Un borde rojo alrededor de la grilla marca que hubo un evento catastrófico
+        todavía no fue reemplazado. Un destello ámbar sobre toda la grilla marca que hubo un evento catastrófico
         (RF-015) recientemente — se mantiene varias generaciones para que no pase desapercibido, distinto de un
         clima que se pone desfavorable de forma gradual (RF-011).
       </p>
