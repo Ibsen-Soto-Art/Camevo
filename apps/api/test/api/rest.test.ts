@@ -1,16 +1,21 @@
 import http from "node:http";
 import { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createLiveRunRegistry, LiveRunRegistry } from "../../src/api/live-run-registry";
 import { createApp, resolveAllowedOrigins } from "../../src/api/rest/app";
+import { createUniformGenome } from "../../src/engine/organism/genome";
 import { InMemoryRunRepository } from "../../src/persistence/repository/in-memory-repository";
+import { SimulationConfig, advanceGeneration, createSimulationState } from "../../src/simulation/orchestrator/run";
 
 describe("api/rest", () => {
   let server: http.Server;
   let baseUrl: string;
+  let liveRunRegistry: LiveRunRegistry;
 
   beforeAll(async () => {
     const repository = new InMemoryRunRepository();
-    const app = createApp(repository);
+    liveRunRegistry = createLiveRunRegistry();
+    const app = createApp(repository, liveRunRegistry);
     server = http.createServer(app);
     await new Promise<void>((resolve) => server.listen(0, resolve));
     const { port } = server.address() as AddressInfo;
@@ -164,6 +169,64 @@ describe("api/rest", () => {
     it("NO refleja un origen fuera de la lista permitida", async () => {
       const res = await fetch(`${baseUrl}/health`, { headers: { Origin: "https://sitio-ajeno.example" } });
       expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    });
+  });
+
+  describe("GET /runs/:runId/organisms/:organismId (RF-027)", () => {
+    // Alcance reducido (aprobado explícitamente): solo sirve la
+    // generación ACTUAL de una corrida en vivo en ESTE proceso — nunca
+    // generaciones pasadas ni corridas ya guardadas. El registro es un
+    // Map en memoria (ver live-run-registry.ts), así que estos tests lo
+    // pueblan a mano, simulando lo que streamRunLive haría en producción.
+    function buildLiveState() {
+      const config: SimulationConfig = {
+        gridWidth: 1,
+        gridHeight: 1,
+        baseCyclesPerUpdate: 20,
+        mutationRate: 0,
+        ancestorGenomes: [createUniformGenome("replicate", 5)],
+        placementMode: "near-parent",
+        updates: 5,
+        seed: 42,
+      };
+      const state = createSimulationState(config);
+      advanceGeneration(state); // deja el organismo sembrado en un estado real, no recién creado
+      const organismId = state.grid.cells[0]!.id;
+      return { state, organismId };
+    }
+
+    it("devuelve los cuatro campos acordados cuando la corrida está en vivo y el organismo existe", async () => {
+      const { state, organismId } = buildLiveState();
+      liveRunRegistry.register("run-viva", state);
+
+      const res = await fetch(`${baseUrl}/runs/run-viva/organisms/${organismId}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { generation: number; x: number; y: number; fitness: number; tasksSolved: string[] };
+
+      expect(body).toMatchObject({ generation: state.generation, x: 0, y: 0 });
+      expect(typeof body.fitness).toBe("number");
+      expect(Array.isArray(body.tasksSolved)).toBe(true);
+
+      liveRunRegistry.unregister("run-viva");
+    });
+
+    it("404 con mensaje específico si la corrida no está activa en el servidor (terminada, o el servidor se reinició)", async () => {
+      const res = await fetch(`${baseUrl}/runs/run-que-no-existe/organisms/algun-id`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("La corrida ya no está activa en el servidor");
+    });
+
+    it("404 con mensaje específico y DISTINTO si la corrida está viva pero ESE organismo puntual ya no existe", async () => {
+      const { state } = buildLiveState();
+      liveRunRegistry.register("run-viva-2", state);
+
+      const res = await fetch(`${baseUrl}/runs/run-viva-2/organisms/id-que-nunca-existio`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("Este organismo ya no existe — fue reemplazado o murió antes de que pudieras inspeccionarlo");
+
+      liveRunRegistry.unregister("run-viva-2");
     });
   });
 });

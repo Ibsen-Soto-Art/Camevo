@@ -87,3 +87,27 @@ export async function getRun(id: string): Promise<GetRunResponse> {
   }
   return (await res.json()) as GetRunResponse;
 }
+
+/** RF-027: detalle de un organismo puntual — solo disponible mientras la corrida sigue en vivo en el servidor (ver docs/03-arquitectura.md §4.1). */
+export interface OrganismDetail {
+  readonly generation: number;
+  readonly x: number;
+  readonly y: number;
+  readonly fitness: number;
+  readonly tasksSolved: readonly string[];
+}
+
+/**
+ * El servidor ya devuelve el mensaje final en español para los dos casos
+ * de 404 (corrida no activa / organismo puntual ya no existe) — se
+ * propaga tal cual, no se reinterpreta acá, para no duplicar ese texto
+ * en dos lugares que podrían desalinearse.
+ */
+export async function getOrganismDetail(runId: string, organismId: string): Promise<OrganismDetail> {
+  const res = await fetch(`${API_BASE}/runs/${runId}/organisms/${organismId}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `No se pudo obtener el detalle del organismo (HTTP ${res.status})`);
+  }
+  return (await res.json()) as OrganismDetail;
+}

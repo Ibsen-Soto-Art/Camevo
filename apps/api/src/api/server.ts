@@ -1,6 +1,7 @@
 import type { ControlMessage, PersistedRunConfig } from "@camevo/shared-types";
 import http from "node:http";
 import { WebSocketServer } from "ws";
+import { createLiveRunRegistry } from "./live-run-registry";
 import { RunRepository } from "../persistence/repository/types";
 import { createApp, resolveAllowedOrigins } from "./rest/app";
 import { buildSimulationConfig } from "./rest/config-request";
@@ -20,9 +21,16 @@ const STREAM_PATH = /^\/runs\/([^/]+)\/stream$/;
  * ajustable en vivo por el propio cliente vía `ControlMessage`. Los tests
  * que antes usaban este parámetro para correr rápido ahora lo piden por
  * corrida en el body de `POST /runs`.
+ *
+ * RF-027: `createServer` es la única pieza que conoce tanto a `api/rest`
+ * como a `api/ws` — por eso es quien crea el `LiveRunRegistry` (una sola
+ * instancia) y se la inyecta a ambos, el mismo patrón de composición que
+ * ya existe con `repository`. Ni `rest/app.ts` ni `ws/live-run.ts`
+ * importan nada el uno del otro.
  */
 export function createServer(repository: RunRepository): http.Server {
-  const app = createApp(repository);
+  const liveRunRegistry = createLiveRunRegistry();
+  const app = createApp(repository, liveRunRegistry);
   const server = http.createServer(app);
   const wss = new WebSocketServer({ noServer: true });
 
@@ -76,7 +84,7 @@ export function createServer(repository: RunRepository): http.Server {
         }
       });
 
-      await streamRunLive(runId, config, repository, ws, control);
+      await streamRunLive(runId, config, repository, ws, control, liveRunRegistry);
     })();
   });
 

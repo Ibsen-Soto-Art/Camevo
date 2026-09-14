@@ -45,7 +45,7 @@ export default function RunPanel({
       </div>
       {run.snapshots.length > 0 && (
         <>
-          <PopulationGrid snapshots={run.snapshots} gridWidth={gridWidth} gridHeight={gridHeight} />
+          <PopulationGrid snapshots={run.snapshots} gridWidth={gridWidth} gridHeight={gridHeight} runId={run.runId} />
           <ExplanatoryPanel
             climateEnabled={climateEnabled}
             climateChangeSpeed={climateChangeSpeed}

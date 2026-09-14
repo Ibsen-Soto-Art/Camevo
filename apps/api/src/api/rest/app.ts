@@ -1,6 +1,7 @@
 import type { GetRunResponse, ListRunsResponse, PersistedRunConfig, RunMetadata, RunSummary } from "@camevo/shared-types";
 import cors from "cors";
 import express, { Express } from "express";
+import { LiveRunRegistry } from "../live-run-registry";
 import { RunRepository } from "../../persistence/repository/types";
 import { CreateRunRequestBody, parseCreateRunRequest } from "./config-request";
 
@@ -43,7 +44,7 @@ function clampQueryNumber(raw: unknown, fallback: number, min: number, max: numb
  * ruta solo deja la corrida creada y lista para que un cliente abra el
  * WebSocket correspondiente.
  */
-export function createApp(repository: RunRepository): Express {
+export function createApp(repository: RunRepository, registry: LiveRunRegistry): Express {
   const app = express();
   app.use(cors({ origin: resolveAllowedOrigins() }));
   app.use(express.json());
@@ -109,6 +110,53 @@ export function createApp(repository: RunRepository): Express {
       snapshots: snapshots.map((s) => s.snapshot) as unknown as GetRunResponse["snapshots"],
     };
     res.json(body);
+  });
+
+  /**
+   * RF-027: detalle de un organismo puntual, bajo demanda (click en una
+   * celda de la grilla) — no en cada snapshot de WS, para no inflar el
+   * streaming en vivo (RNF-001, ver docs/03-arquitectura.md §4.1).
+   *
+   * Alcance reducido respecto a lo documentado originalmente: solo sirve
+   * la generación ACTUAL de una corrida que sigue en vivo en ESTE
+   * proceso — no generaciones pasadas ni corridas ya guardadas (RF-025).
+   * El motivo es de raíz, no una limitación de esta ruta: el genoma y
+   * `tasksSolved` de un organismo nunca se persisten (solo
+   * `{id,x,y,fitness}` llega a la base — ver `OrganismSummary`), así que
+   * no hay de dónde reconstruirlos una vez que la generación pasó. Por
+   * eso la URL no lleva `:generation` como sugería el diseño original:
+   * prometer esa ruta habría sido pedir algo que el servidor no puede
+   * cumplir (ver la nota actualizada en 03-arquitectura.md §4.1).
+   *
+   * Dos 404 distintos, cada uno con su propio mensaje — no un genérico:
+   * la corrida entera puede no estar en vivo (terminó, o el servidor se
+   * reinició — el registro es un Map en memoria, no sobrevive un
+   * restart), o la corrida SÍ está en vivo pero ESE organismo puntual ya
+   * no existe (murió o fue reemplazado entre que el usuario vio el
+   * snapshot y decidió hacer click).
+   */
+  app.get("/runs/:runId/organisms/:organismId", (req, res) => {
+    const state = registry.get(req.params.runId as string);
+    if (!state) {
+      res.status(404).json({ error: "La corrida ya no está activa en el servidor" });
+      return;
+    }
+
+    const index = state.grid.cells.findIndex((organism) => organism?.id === req.params.organismId);
+    if (index === -1) {
+      res.status(404).json({ error: "Este organismo ya no existe — fue reemplazado o murió antes de que pudieras inspeccionarlo" });
+      return;
+    }
+
+    const organism = state.grid.cells[index]!;
+    const { x, y } = state.grid.coordsOf(index);
+    res.json({
+      generation: state.generation,
+      x,
+      y,
+      fitness: organism.offspringProduced,
+      tasksSolved: [...organism.tasksSolved],
+    });
   });
 
   return app;

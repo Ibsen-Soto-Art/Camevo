@@ -1,5 +1,6 @@
 import type { LiveMessage } from "@camevo/shared-types";
 import type { WebSocket } from "ws";
+import { LiveRunRegistry } from "../live-run-registry";
 import { RunRepository } from "../../persistence/repository/types";
 import { SimulationConfig, advanceGeneration, createSimulationState } from "../../simulation/orchestrator/run";
 import { PlaybackControl } from "./playback-control";
@@ -58,6 +59,15 @@ function sleep(ms: number): Promise<void> {
  * función resuelve, cada snapshot ya fue persistido o su fallo ya quedó
  * registrado — sin que ese vaciado final bloquee el cierre del socket
  * que sí ve el usuario.
+ *
+ * RF-027: `registry.register(runId, state)` expone el `SimulationState`
+ * en vivo (con el genoma y `tasksSolved` reales de cada organismo, que
+ * nunca se persisten ni viajan por WS — ver live-run-registry.ts) para
+ * que `api/rest` pueda servir el detalle de un organismo bajo demanda.
+ * El `try/finally` es la garantía real: sin importar CÓMO termine esta
+ * función (corrida completa, extinción, socket cerrado a mitad de
+ * camino, una excepción), el registro se limpia — un click después de
+ * que la corrida ya no está en vivo debe dar 404, no datos viejos.
  */
 export async function streamRunLive(
   runId: string,
@@ -65,6 +75,7 @@ export async function streamRunLive(
   repository: RunRepository,
   socket: WebSocket,
   control: PlaybackControl,
+  registry: LiveRunRegistry,
 ): Promise<void> {
   let closed = false;
   socket.on("close", () => {
@@ -72,35 +83,41 @@ export async function streamRunLive(
   });
 
   const state = createSimulationState(config);
-  const pendingWrites: Promise<void>[] = [];
+  registry.register(runId, state);
 
-  for (let i = 0; i < config.updates && !closed; i++) {
-    await control.waitIfPaused();
-    if (closed) break;
+  try {
+    const pendingWrites: Promise<void>[] = [];
 
-    const snapshot = advanceGeneration(state);
+    for (let i = 0; i < config.updates && !closed; i++) {
+      await control.waitIfPaused();
+      if (closed) break;
 
-    pendingWrites.push(
-      repository.saveSnapshot(runId, snapshot.generation, snapshot as unknown as Record<string, unknown>).catch((err: unknown) => {
-        console.error(`No se pudo persistir el snapshot ${snapshot.generation} de la corrida ${runId}:`, err);
-      }),
-    );
+      const snapshot = advanceGeneration(state);
 
-    if (socket.readyState === socket.OPEN) {
-      const message: LiveMessage = { type: "snapshot", snapshot };
-      socket.send(JSON.stringify(message));
+      pendingWrites.push(
+        repository.saveSnapshot(runId, snapshot.generation, snapshot as unknown as Record<string, unknown>).catch((err: unknown) => {
+          console.error(`No se pudo persistir el snapshot ${snapshot.generation} de la corrida ${runId}:`, err);
+        }),
+      );
+
+      if (socket.readyState === socket.OPEN) {
+        const message: LiveMessage = { type: "snapshot", snapshot };
+        socket.send(JSON.stringify(message));
+      }
+
+      if (snapshot.extinct) break;
+
+      await sleep(control.msPerGeneration);
     }
 
-    if (snapshot.extinct) break;
+    if (!closed && socket.readyState === socket.OPEN) {
+      const message: LiveMessage = { type: "done" };
+      socket.send(JSON.stringify(message));
+      socket.close();
+    }
 
-    await sleep(control.msPerGeneration);
+    await Promise.all(pendingWrites);
+  } finally {
+    registry.unregister(runId);
   }
-
-  if (!closed && socket.readyState === socket.OPEN) {
-    const message: LiveMessage = { type: "done" };
-    socket.send(JSON.stringify(message));
-    socket.close();
-  }
-
-  await Promise.all(pendingWrites);
 }

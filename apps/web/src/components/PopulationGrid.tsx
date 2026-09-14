@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { GenerationSnapshot } from "../lib/camevo-client";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { getOrganismDetail, type GenerationSnapshot, type OrganismDetail } from "../lib/camevo-client";
 
 const EMPTY_CELL_COLOR = "#2a2a2a";
 const DEFAULT_DISPLAY_SIZE = 400;
@@ -33,7 +33,22 @@ export interface PopulationGridProps {
   readonly snapshots: readonly GenerationSnapshot[];
   readonly gridWidth: number;
   readonly gridHeight: number;
+  /** RF-027: necesario para pedir el detalle de un organismo al servidor — null antes de que exista una corrida. */
+  readonly runId: string | null;
 }
+
+/**
+ * RF-027: estado del panel de inspección, un click a la vez — no hace
+ * falta más que "la última consulta pedida", ya que un click nuevo
+ * reemplaza a cualquiera anterior en curso (ver `requestTokenRef` en el
+ * handler de click, que descarta una respuesta vieja si llegó tarde).
+ */
+type InspectState =
+  | { readonly status: "idle" }
+  | { readonly status: "empty-cell" }
+  | { readonly status: "loading" }
+  | { readonly status: "success"; readonly detail: OrganismDetail }
+  | { readonly status: "error"; readonly message: string };
 
 /** Verde saludable → rojo apagado a medida que el fitness normalizado baja de 1 a 0. */
 function fitnessColor(normalized: number): string {
@@ -84,10 +99,13 @@ const GRADIENT_CSS = [0, 0.25, 0.5, 0.75, 1].map((t) => fitnessColor(t)).join(",
  * antes, un canvas de 400x400 píxeles físicos mostrado a 400 CSS px se
  * veía correcto en pantallas 1x pero ligeramente suave en 2x/3x.
  */
-export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: PopulationGridProps) {
+export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId }: PopulationGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [displaySize, setDisplaySize] = useState(DEFAULT_DISPLAY_SIZE);
+  const [inspect, setInspect] = useState<InspectState>({ status: "idle" });
+  /** Descarta una respuesta de red vieja si el usuario ya hizo click en otra celda mientras tanto. */
+  const requestTokenRef = useRef(0);
   const latest = snapshots.at(-1);
 
   useEffect(() => {
@@ -185,6 +203,51 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
     }
   }, [latest, gridWidth, gridHeight, historicalMaxFitness, displaySize, showCatastropheOverlay]);
 
+  /**
+   * RF-027: convierte el click en píxel a celda de grilla con la MISMA
+   * fórmula que usa el efecto de dibujo (cellWidth/cellHeight sobre
+   * `getBoundingClientRect`, no `displaySize` — el tamaño CSS real
+   * puede diferir por redondeo de `devicePixelRatio`). Buscar el
+   * organismo en `latest.organisms` es gratis (ya está en memoria, es
+   * el mismo snapshot que se dibujó) — recién se llama al servidor si
+   * la celda realmente tiene un organismo.
+   */
+  function handleCellClick(event: MouseEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas || !latest) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const cellWidth = rect.width / gridWidth;
+    const cellHeight = rect.height / gridHeight;
+    const gridX = Math.floor((event.clientX - rect.left) / cellWidth);
+    const gridY = Math.floor((event.clientY - rect.top) / cellHeight);
+
+    const organism = latest.organisms.find((o) => o.x === gridX && o.y === gridY);
+    if (!organism) {
+      requestTokenRef.current += 1;
+      setInspect({ status: "empty-cell" });
+      return;
+    }
+
+    if (!runId) {
+      requestTokenRef.current += 1;
+      setInspect({ status: "error", message: "No se puede inspeccionar: todavía no hay una corrida con id asignado." });
+      return;
+    }
+
+    const token = ++requestTokenRef.current;
+    setInspect({ status: "loading" });
+    getOrganismDetail(runId, organism.id)
+      .then((detail) => {
+        if (requestTokenRef.current === token) setInspect({ status: "success", detail });
+      })
+      .catch((err: unknown) => {
+        if (requestTokenRef.current === token) {
+          setInspect({ status: "error", message: err instanceof Error ? err.message : "Error desconocido" });
+        }
+      });
+  }
+
   if (!latest) {
     return null;
   }
@@ -192,11 +255,39 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight }: Pop
   return (
     <div className="population-grid" ref={containerRef}>
       <div className="population-grid-canvas-wrap">
-        <canvas ref={canvasRef} role="img" aria-label="Grilla poblacional" />
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Grilla poblacional"
+          className="population-grid-canvas"
+          onClick={handleCellClick}
+        />
         {showCatastropheOverlay && (
           <div className="catastrophe-event-banner">⚡ Evento catastrófico — gen {lastCatastropheGeneration}</div>
         )}
       </div>
+      <p className="population-grid-hint">Hacé click en una celda para ver el detalle de ese organismo.</p>
+      {inspect.status !== "idle" && (
+        <div className="organism-inspect-panel">
+          {inspect.status === "loading" && <p className="organism-inspect-loading">Consultando el organismo…</p>}
+          {inspect.status === "empty-cell" && <p className="organism-inspect-empty">Hábitat vacío — no hay ningún organismo acá.</p>}
+          {inspect.status === "error" && <p className="organism-inspect-error">{inspect.message}</p>}
+          {inspect.status === "success" && (
+            <ul className="organism-inspect-details">
+              <li>Produjo {inspect.detail.fitness} crías.</li>
+              <li>
+                {inspect.detail.tasksSolved.length > 0
+                  ? `Tareas lógicas que resuelve: ${inspect.detail.tasksSolved.join(", ")}.`
+                  : "Todavía no resuelve ninguna tarea lógica."}
+              </li>
+              <li>Generación {inspect.detail.generation}.</li>
+              <li>
+                Posición en la grilla: ({inspect.detail.x}, {inspect.detail.y}).
+              </li>
+            </ul>
+          )}
+        </div>
+      )}
       <div className="population-grid-legend">
         <div className="grid-legend-item grid-legend-gradient">
           {/* RNF-004 (re-auditoría): "fitness" nunca se definía en texto plano en ningún punto del flujo principal — el tooltip lo explica, pero eso requiere que alguien piense en pasar el mouse. Acá, donde el usuario ya está mirando la grilla, es el lugar natural para la primera definición mínima. */}

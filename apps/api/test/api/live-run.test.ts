@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { createUniformGenome } from "../../src/engine/organism/genome";
+import { createLiveRunRegistry } from "../../src/api/live-run-registry";
 import { streamRunLive } from "../../src/api/ws/live-run";
 import { PlaybackControl } from "../../src/api/ws/playback-control";
 import { InMemoryRunRepository } from "../../src/persistence/repository/in-memory-repository";
@@ -45,7 +46,7 @@ describe("streamRunLive — corte temprano por extinción (Fase 4)", () => {
     const socket = new FakeSocket();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(run.id, config, repository, socket as any, new PlaybackControl(0));
+    await streamRunLive(run.id, config, repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
 
     const snapshotMessages = socket.sent.filter((m) => m.type === "snapshot");
     expect(snapshotMessages.length).toBeLessThan(50);
@@ -85,7 +86,7 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
     const runA = await repoA.createRun({ config: {}, seed });
     const socketA = new FakeSocket();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(runA.id, buildConfig(seed), repoA, socketA as any, new PlaybackControl(0));
+    await streamRunLive(runA.id, buildConfig(seed), repoA, socketA as any, new PlaybackControl(0), createLiveRunRegistry());
 
     // Corrida B: misma config y semilla, pero arranca YA pausada (antes de
     // que streamRunLive calcule la generación 0) y solo se reanuda después
@@ -100,7 +101,7 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
     controlB.pause();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const streamPromiseB = streamRunLive(runB.id, buildConfig(seed), repoB, socketB as any, controlB);
+    const streamPromiseB = streamRunLive(runB.id, buildConfig(seed), repoB, socketB as any, controlB, createLiveRunRegistry());
 
     expect(socketB.sent.filter((m) => m.type === "snapshot")).toHaveLength(0); // nada avanzó todavía, sigue en pausa
 
@@ -121,7 +122,7 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
     const runA = await repoA.createRun({ config: {}, seed });
     const socketA = new FakeSocket();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(runA.id, buildConfig(seed), repoA, socketA as any, new PlaybackControl(0));
+    await streamRunLive(runA.id, buildConfig(seed), repoA, socketA as any, new PlaybackControl(0), createLiveRunRegistry());
 
     const repoB = new InMemoryRunRepository();
     const runB = await repoB.createRun({ config: {}, seed });
@@ -129,7 +130,7 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
     const controlB = new PlaybackControl(5); // pacing chico pero no-cero, para poder pausar "a mitad de camino"
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const streamPromiseB = streamRunLive(runB.id, buildConfig(seed), repoB, socketB as any, controlB);
+    const streamPromiseB = streamRunLive(runB.id, buildConfig(seed), repoB, socketB as any, controlB, createLiveRunRegistry());
 
     // Espera a que hayan llegado algunas generaciones, pausa, espera de
     // verdad, y reanuda — igual que un usuario pausando a mitad de corrida.
@@ -192,7 +193,7 @@ describe("streamRunLive — saveSnapshot no bloquea el envío (Fase 5, cierre de
 
     const start = Date.now();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(run.id, buildConfig(1, UPDATES), repository, socket as any, new PlaybackControl(0));
+    await streamRunLive(run.id, buildConfig(1, UPDATES), repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
     const totalMs = Date.now() - start;
 
     expect(socket.sent.filter((m) => m.type === "snapshot")).toHaveLength(UPDATES);
@@ -210,7 +211,7 @@ describe("streamRunLive — saveSnapshot no bloquea el envío (Fase 5, cierre de
     const socket = new FakeSocket();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(run.id, buildConfig(2, UPDATES), repository, socket as any, new PlaybackControl(0));
+    await streamRunLive(run.id, buildConfig(2, UPDATES), repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
 
     // Para cuando streamRunLive resolvió, todas las escrituras (que arrancaron
     // casi simultáneas) ya tuvieron tiempo de sobra para terminar.
@@ -228,7 +229,7 @@ describe("streamRunLive — saveSnapshot no bloquea el envío (Fase 5, cierre de
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await streamRunLive(run.id, buildConfig(3, UPDATES), repository, socket as any, new PlaybackControl(0));
+      await streamRunLive(run.id, buildConfig(3, UPDATES), repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
 
       // La corrida completa igual, generación fallida incluida — el fallo de
       // persistencia no es visible para el cliente WS, solo para el operador.
@@ -248,5 +249,56 @@ describe("streamRunLive — saveSnapshot no bloquea el envío (Fase 5, cierre de
     } finally {
       consoleErrorSpy.mockRestore();
     }
+  });
+});
+
+describe("streamRunLive — registro en LiveRunRegistry (RF-027)", () => {
+  function buildConfig(seed: number, updates: number): SimulationConfig {
+    return {
+      gridWidth: 5,
+      gridHeight: 5,
+      baseCyclesPerUpdate: 20,
+      mutationRate: 0.05,
+      ancestorGenomes: [createUniformGenome("replicate", 5)],
+      placementMode: "near-parent",
+      updates,
+      seed,
+    };
+  }
+
+  it("registra el SimulationState mientras la corrida transmite, y lo quita al terminar", async () => {
+    const repository = new InMemoryRunRepository();
+    const run = await repository.createRun({ config: {}, seed: 1 });
+    const socket = new FakeSocket();
+    const registry = createLiveRunRegistry();
+
+    expect(registry.get(run.id)).toBeUndefined(); // todavía no arrancó
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const streamPromise = streamRunLive(run.id, buildConfig(1, 5), repository, socket as any, new PlaybackControl(20), registry);
+
+    // A mitad de camino (ritmo real, no 0), el registro debe tener la corrida.
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(registry.get(run.id)).toBeDefined();
+
+    await streamPromise;
+    expect(registry.get(run.id)).toBeUndefined(); // limpiado al terminar
+  });
+
+  it("limpia el registro incluso si el socket se cierra a mitad de la corrida (no solo al completarse normalmente)", async () => {
+    const repository = new InMemoryRunRepository();
+    const run = await repository.createRun({ config: {}, seed: 2 });
+    const socket = new FakeSocket();
+    const registry = createLiveRunRegistry();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const streamPromise = streamRunLive(run.id, buildConfig(2, 50), repository, socket as any, new PlaybackControl(20), registry);
+
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(registry.get(run.id)).toBeDefined();
+
+    socket.emit("close");
+    await streamPromise;
+    expect(registry.get(run.id)).toBeUndefined();
   });
 });
