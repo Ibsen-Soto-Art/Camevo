@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +17,7 @@ interface RunRow {
   config: Record<string, unknown>;
   seed: string | number;
   created_at: Date;
+  browser_id: string;
 }
 
 interface RunSummaryRow extends RunRow {
@@ -38,6 +38,7 @@ function toRunRecord(row: RunRow): RunRecord {
     // semillas caben en Number.MAX_SAFE_INTEGER sin problema.
     seed: Number(row.seed),
     createdAt: row.created_at.toISOString(),
+    browserId: row.browser_id,
   };
 }
 
@@ -45,10 +46,9 @@ export class PostgresRunRepository implements RunRepository {
   constructor(private readonly pool: Pool) {}
 
   async createRun(input: CreateRunInput): Promise<RunRecord> {
-    const id = randomUUID();
     const result = await this.pool.query<RunRow>(
-      "INSERT INTO runs (id, config, seed) VALUES ($1, $2, $3) RETURNING id, config, seed, created_at",
-      [id, input.config, input.seed],
+      "INSERT INTO runs (id, config, seed, browser_id) VALUES ($1, $2, $3, $4) RETURNING id, config, seed, created_at, browser_id",
+      [input.id, input.config, input.seed, input.browserId],
     );
     return toRunRecord(result.rows[0] as RunRow);
   }
@@ -72,23 +72,24 @@ export class PostgresRunRepository implements RunRepository {
    * (paginas de runs, tabla pequeña), no con el total histórico de
    * snapshots — bajó a low milliseconds contra el mismo volumen.
    */
-  async listRuns({ limit, offset }: ListRunsOptions): Promise<ListRunsResult> {
+  async listRuns({ limit, offset, browserId }: ListRunsOptions): Promise<ListRunsResult> {
     const result = await this.pool.query<RunSummaryRow>(
       `WITH page AS (
-         SELECT id, config, seed, created_at
+         SELECT id, config, seed, created_at, browser_id
          FROM runs
+         WHERE browser_id = $3
          ORDER BY created_at DESC, id ASC
          LIMIT $1 OFFSET $2
        )
        SELECT
-         page.id, page.config, page.seed, page.created_at,
+         page.id, page.config, page.seed, page.created_at, page.browser_id,
          COUNT(gs.generation)::int AS snapshot_count,
          COALESCE(BOOL_OR((gs.snapshot->>'extinct')::boolean), false) AS ended_in_extinction
        FROM page
        LEFT JOIN generation_snapshots gs ON gs.run_id = page.id
-       GROUP BY page.id, page.config, page.seed, page.created_at
+       GROUP BY page.id, page.config, page.seed, page.created_at, page.browser_id
        ORDER BY page.created_at DESC, page.id ASC`,
-      [limit + 1, offset],
+      [limit + 1, offset, browserId],
     );
 
     const hasMore = result.rows.length > limit;
@@ -103,7 +104,9 @@ export class PostgresRunRepository implements RunRepository {
 
   async getRun(id: string): Promise<RunRecord | null> {
     try {
-      const result = await this.pool.query<RunRow>("SELECT id, config, seed, created_at FROM runs WHERE id = $1", [id]);
+      const result = await this.pool.query<RunRow>("SELECT id, config, seed, created_at, browser_id FROM runs WHERE id = $1", [
+        id,
+      ]);
       const row = result.rows[0];
       return row ? toRunRecord(row) : null;
     } catch (error) {

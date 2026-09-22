@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import RunPanel from "../src/components/RunPanel";
-import type { RunHandle } from "../src/hooks/useRun";
+import type { RunHandle, RunStatus, SaveStatus } from "../src/hooks/useRun";
 import type { GenerationSnapshot } from "../src/lib/camevo-client";
 
 function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
@@ -48,6 +48,9 @@ function historicalRunHandle(snapshots: GenerationSnapshot[]): RunHandle {
     pause: () => {},
     resume: () => {},
     setSpeed: () => {},
+    save: async () => {},
+    saveStatus: "unsaved",
+    saveError: null,
   };
 }
 
@@ -126,5 +129,105 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
 
     expect(screen.getAllByText(/rescate evolutivo/i).length).toBeGreaterThan(0);
     expect(document.querySelector(".status-line")).toHaveTextContent(/estado:\s*done/i);
+  });
+});
+
+/**
+ * Grupo 1 (Cambio 1B), pregunta de re-auditoría: confirmar con un test —
+ * no solo con lectura del código — que "Guardar esta corrida" (1) nunca
+ * aparece mientras la corrida sigue corriendo, solo una vez "done", y
+ * (2) tras guardarla pasa a un botón "Guardada ✓" deshabilitado, no a un
+ * botón que se pueda volver a clickear (esa es la protección real contra
+ * doble guardado del lado de la UI, además del `alreadySaved` idempotente
+ * del backend).
+ */
+function liveRunHandle(status: RunStatus, saveStatus: SaveStatus): RunHandle {
+  return {
+    status,
+    runId: "live-run-id",
+    snapshots: [],
+    errorMessage: null,
+    start: async () => {},
+    pause: () => {},
+    resume: () => {},
+    setSpeed: () => {},
+    save: async () => {},
+    saveStatus,
+    saveError: saveStatus === "error" ? "No se pudo guardar la corrida (HTTP 500)" : null,
+  };
+}
+
+describe("<RunPanel /> — botón 'Guardar esta corrida' (Grupo 1)", () => {
+  it("no aparece mientras la corrida sigue en curso (running)", () => {
+    render(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={liveRunHandle("running", "unsaved")}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+        onSave={() => {}}
+        saveStatus="unsaved"
+        saveError={null}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Guardar esta corrida" })).not.toBeInTheDocument();
+  });
+
+  it("aparece una vez que la corrida llegó a 'done', y pasa a 'Guardada ✓' deshabilitado tras guardar", () => {
+    const { rerender } = render(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={liveRunHandle("done", "unsaved")}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+        onSave={() => {}}
+        saveStatus="unsaved"
+        saveError={null}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Guardar esta corrida" })).toBeEnabled();
+
+    rerender(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={liveRunHandle("done", "saved")}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+        onSave={() => {}}
+        saveStatus="saved"
+        saveError={null}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Guardar esta corrida" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Guardada ✓" })).toBeDisabled();
+  });
+
+  it("sin onSave (corrida histórica: ya está guardada por definición) nunca muestra el botón, aunque status sea 'done'", () => {
+    render(
+      <RunPanel
+        title="Corrida histórica"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={historicalRunHandle([])}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Guardar esta corrida" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Guardada ✓" })).not.toBeInTheDocument();
   });
 });

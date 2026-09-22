@@ -1,4 +1,5 @@
 import type { ControlMessage, CreateRunRequest, GetRunResponse, ListRunsResponse, LiveMessage } from "@camevo/shared-types";
+import { getBrowserId } from "./browser-id";
 
 export type {
   ClimateChangeSpeed,
@@ -43,7 +44,7 @@ export type RunFormValues = Required<
 export async function createRun(values: RunFormValues): Promise<{ runId: string }> {
   const res = await fetch(`${API_BASE}/runs`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Browser-ID": getBrowserId() },
     body: JSON.stringify(values),
   });
   if (!res.ok) {
@@ -51,6 +52,29 @@ export async function createRun(values: RunFormValues): Promise<{ runId: string 
     throw new Error(body.errors?.join(", ") ?? `No se pudo crear la corrida (HTTP ${res.status})`);
   }
   return (await res.json()) as { runId: string };
+}
+
+/**
+ * Grupo 1 (Cambio 1B): el guardado es intencional, no automático — esta es
+ * la única llamada que hace que una corrida llegue a Postgres. Un click
+ * repetido (doble click, F5) no es un error: el servidor responde
+ * `alreadySaved: true` en vez de fallar o duplicar snapshots.
+ */
+export interface SaveRunResponse {
+  readonly runId: string;
+  readonly alreadySaved: boolean;
+}
+
+export async function saveRun(runId: string): Promise<SaveRunResponse> {
+  const res = await fetch(`${API_BASE}/runs/${runId}/save`, {
+    method: "POST",
+    headers: { "X-Browser-ID": getBrowserId() },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `No se pudo guardar la corrida (HTTP ${res.status})`);
+  }
+  return (await res.json()) as SaveRunResponse;
 }
 
 /** RF-023: además de cerrar, `send` manda mensajes de control (pause/resume/setSpeed) por el mismo socket ya abierto. */
@@ -70,20 +94,31 @@ export function connectToRunStream(runId: string, onMessage: (message: LiveMessa
   };
 }
 
-/** RF-025: corridas guardadas más recientes primero, para el selector de comparación histórica. */
+/** RF-025 + Grupo 1: corridas guardadas de ESTE navegador, más recientes primero, para el selector de comparación histórica. */
 export async function listRuns(limit = 50, offset = 0): Promise<ListRunsResponse> {
-  const res = await fetch(`${API_BASE}/runs?limit=${limit}&offset=${offset}`);
+  const res = await fetch(`${API_BASE}/runs?limit=${limit}&offset=${offset}`, {
+    headers: { "X-Browser-ID": getBrowserId() },
+  });
   if (!res.ok) {
     throw new Error(`No se pudo listar las corridas guardadas (HTTP ${res.status})`);
   }
   return (await res.json()) as ListRunsResponse;
 }
 
-/** RF-025: config + snapshots completos de una corrida ya guardada, para comparación histórica. */
+/**
+ * RF-025: config + snapshots completos de una corrida ya guardada, para
+ * comparación histórica. Grupo 1: un 403 acá significa que la corrida es
+ * de OTRO navegador — se propaga el mensaje que ya manda el servidor
+ * (`{error}`), no un genérico "HTTP 403", para que quien lo vea entienda
+ * qué pasó en vez de ver un código sin explicación.
+ */
 export async function getRun(id: string): Promise<GetRunResponse> {
-  const res = await fetch(`${API_BASE}/runs/${id}`);
+  const res = await fetch(`${API_BASE}/runs/${id}`, {
+    headers: { "X-Browser-ID": getBrowserId() },
+  });
   if (!res.ok) {
-    throw new Error(`No se pudo cargar la corrida ${id} (HTTP ${res.status})`);
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `No se pudo cargar la corrida ${id} (HTTP ${res.status})`);
   }
   return (await res.json()) as GetRunResponse;
 }

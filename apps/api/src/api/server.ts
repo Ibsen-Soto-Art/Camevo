@@ -1,4 +1,4 @@
-import type { ControlMessage, PersistedRunConfig } from "@camevo/shared-types";
+import type { ControlMessage } from "@camevo/shared-types";
 import http from "node:http";
 import { WebSocketServer } from "ws";
 import { createLiveRunRegistry } from "./live-run-registry";
@@ -59,14 +59,19 @@ export function createServer(repository: RunRepository): http.Server {
 
   wss.on("connection", (ws, runId: string) => {
     void (async () => {
-      const run = await repository.getRun(runId);
-      if (!run) {
+      // Grupo 1: ya no se busca en Postgres — `POST /runs` deja la config
+      // "pending" en liveRunRegistry (sin tocar la base, ver rest/app.ts),
+      // y el streaming se arranca desde ahí. Una corrida recién guardada
+      // (`POST /runs/:id/save`) tampoco vuelve a esta ruta: guardar no
+      // reinicia el streaming, solo persiste lo que ya se transmitió.
+      const pending = liveRunRegistry.get(runId);
+      if (!pending) {
         ws.send(JSON.stringify({ type: "error", message: "Corrida no encontrada" }));
         ws.close();
         return;
       }
 
-      const persistedConfig = run.config as unknown as PersistedRunConfig;
+      const persistedConfig = pending.persistedConfig;
       const config = buildSimulationConfig(persistedConfig);
       const control = new PlaybackControl(persistedConfig.msPerGeneration);
 
@@ -84,7 +89,7 @@ export function createServer(repository: RunRepository): http.Server {
         }
       });
 
-      await streamRunLive(runId, config, repository, ws, control, liveRunRegistry);
+      await streamRunLive(runId, config, ws, control, liveRunRegistry);
     })();
   });
 

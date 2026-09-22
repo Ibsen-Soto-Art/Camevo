@@ -6,6 +6,8 @@ import { createServer } from "../../src/api/server";
 import { InMemoryRunRepository } from "../../src/persistence/repository/in-memory-repository";
 import { LiveMessage } from "../../src/api/ws/live-run";
 
+const BROWSER_ID = "browser-test-wsaaaaaa";
+
 describe("api/ws — streaming en vivo generación a generación", () => {
   let server: http.Server;
   let repository: InMemoryRunRepository;
@@ -26,12 +28,20 @@ describe("api/ws — streaming en vivo generación a generación", () => {
   async function createRun(updates: number) {
     const res = await fetch(`${baseHttpUrl}/runs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Browser-ID": BROWSER_ID },
       // 1ms entre generaciones para que el test sea rápido (RF-023: ahora es por corrida).
       body: JSON.stringify({ gridWidth: 5, gridHeight: 5, updates, msPerGeneration: 1 }),
     });
     const body = (await res.json()) as { runId: string };
     return body.runId;
+  }
+
+  /** Grupo 1: guardar es intencional — sin este click, GET /runs/:id devuelve 404 aunque la corrida ya haya transmitido. */
+  async function saveRun(runId: string) {
+    return fetch(`${baseHttpUrl}/runs/${runId}/save`, {
+      method: "POST",
+      headers: { "X-Browser-ID": BROWSER_ID },
+    });
   }
 
   function collectMessages(runId: string): Promise<LiveMessage[]> {
@@ -61,11 +71,14 @@ describe("api/ws — streaming en vivo generación a generación", () => {
     expect(messages.at(-1)?.type).toBe("done");
   });
 
-  it("persiste cada snapshot a medida que se transmite (RF-030)", async () => {
+  it("acumula cada snapshot mientras transmite, y un click en Guardar los persiste todos (Grupo 1 + RF-030)", async () => {
     const runId = await createRun(3);
     await collectMessages(runId);
 
-    const res = await fetch(`${baseHttpUrl}/runs/${runId}`);
+    const saveRes = await saveRun(runId);
+    expect(saveRes.status).toBe(201);
+
+    const res = await fetch(`${baseHttpUrl}/runs/${runId}`, { headers: { "X-Browser-ID": BROWSER_ID } });
     const body = (await res.json()) as { snapshots: { generation: number }[] };
     expect(body.snapshots.map((s) => s.generation)).toEqual([0, 1, 2]);
   });

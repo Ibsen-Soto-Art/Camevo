@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import { PostgresRunRepository, ensureSchema } from "../../src/persistence/repository/postgres-repository";
@@ -25,6 +26,9 @@ if (databaseUrl) {
   }
 }
 
+const BROWSER_A = "browser-aaaaaaaa";
+const BROWSER_B = "browser-bbbbbbbb";
+
 describe.skipIf(!available)("PostgresRunRepository (integración, requiere camevo-db)", () => {
   afterAll(async () => {
     await pool?.end();
@@ -34,39 +38,47 @@ describe.skipIf(!available)("PostgresRunRepository (integración, requiere camev
     const repo = new PostgresRunRepository(pool as Pool);
     await ensureSchema(pool as Pool);
 
-    const run = await repo.createRun({ config: { gridWidth: 10, seed: 99 }, seed: 99 });
+    const id = randomUUID();
+    const run = await repo.createRun({ id, config: { gridWidth: 10, seed: 99 }, seed: 99, browserId: BROWSER_A });
     expect(run.seed).toBe(99);
+    expect(run.id).toBe(id);
+    expect(run.browserId).toBe(BROWSER_A);
 
     await repo.saveSnapshot(run.id, 0, { generation: 0, averageFitness: 0.1 });
     await repo.saveSnapshot(run.id, 1, { generation: 1, averageFitness: 0.2 });
 
     const fetched = await repo.getRun(run.id);
     expect(fetched?.config).toEqual({ gridWidth: 10, seed: 99 });
+    expect(fetched?.browserId).toBe(BROWSER_A);
 
     const snapshots = await repo.listSnapshots(run.id);
     expect(snapshots.map((s) => s.generation)).toEqual([0, 1]);
     expect(snapshots[1]?.snapshot).toEqual({ generation: 1, averageFitness: 0.2 });
   });
 
-  it("listRuns (RF-025): ordena por más reciente, pagina y calcula endedInExtinction/snapshotCount", async () => {
+  it("listRuns (RF-025): ordena por más reciente, pagina, calcula endedInExtinction/snapshotCount, y filtra por browser_id (Grupo 1)", async () => {
     const repo = new PostgresRunRepository(pool as Pool);
     await ensureSchema(pool as Pool);
 
-    const extinctRun = await repo.createRun({ config: { seed: 501 }, seed: 501 });
+    const extinctRun = await repo.createRun({ id: randomUUID(), config: { seed: 501 }, seed: 501, browserId: BROWSER_A });
     await repo.saveSnapshot(extinctRun.id, 0, { generation: 0, extinct: false });
     await repo.saveSnapshot(extinctRun.id, 1, { generation: 1, extinct: true });
 
     // now() de Postgres tiene precisión de microsegundos, así que no hace
     // falta un delay artificial entre inserciones para distinguir el orden
     // (a diferencia de InMemoryRunRepository, ver in-memory-repository.test.ts).
-    const survivingRun = await repo.createRun({ config: { seed: 502 }, seed: 502 });
+    const survivingRun = await repo.createRun({ id: randomUUID(), config: { seed: 502 }, seed: 502, browserId: BROWSER_A });
     await repo.saveSnapshot(survivingRun.id, 0, { generation: 0, extinct: false });
 
-    const noSnapshotsRun = await repo.createRun({ config: { seed: 503 }, seed: 503 });
+    const noSnapshotsRun = await repo.createRun({ id: randomUUID(), config: { seed: 503 }, seed: 503, browserId: BROWSER_A });
 
-    // limit=3 alcanza exactamente a las 3 corridas recién creadas, que son
-    // las más recientes de la tabla sin importar filas de tests anteriores.
-    const { runs } = await repo.listRuns({ limit: 3, offset: 0 });
+    // Grupo 1: esta corrida es de OTRO browser_id — nunca debe aparecer en listRuns de BROWSER_A, ni siquiera siendo la más reciente.
+    await repo.createRun({ id: randomUUID(), config: { seed: 504 }, seed: 504, browserId: BROWSER_B });
+
+    // limit=3 alcanza exactamente a las 3 corridas de BROWSER_A recién
+    // creadas, que son las más recientes de ESE browser_id sin importar
+    // filas de tests anteriores (u otros browser_id).
+    const { runs } = await repo.listRuns({ limit: 3, offset: 0, browserId: BROWSER_A });
     const byId = new Map(runs.map((r) => [r.id, r]));
 
     expect(runs.map((r) => r.id)).toEqual([noSnapshotsRun.id, survivingRun.id, extinctRun.id]);
@@ -79,9 +91,20 @@ describe.skipIf(!available)("PostgresRunRepository (integración, requiere camev
 
     // La tabla ya tiene filas de tests anteriores (esta suite no trunca
     // entre tests), así que con limit=1 siempre debe quedar más por leer.
-    const page1 = await repo.listRuns({ limit: 1, offset: 0 });
+    const page1 = await repo.listRuns({ limit: 1, offset: 0, browserId: BROWSER_A });
     expect(page1.runs[0]?.id).toBe(noSnapshotsRun.id);
     expect(page1.hasMore).toBe(true);
+  });
+
+  it("Grupo 1: listRuns de un browser_id que nunca guardó nada devuelve vacío, aunque otros browser_id sí tengan corridas", async () => {
+    const repo = new PostgresRunRepository(pool as Pool);
+    await ensureSchema(pool as Pool);
+
+    await repo.createRun({ id: randomUUID(), config: {}, seed: 1, browserId: BROWSER_A });
+
+    const { runs, hasMore } = await repo.listRuns({ limit: 10, offset: 0, browserId: "browser-nunca-uso-la-app" });
+    expect(runs).toEqual([]);
+    expect(hasMore).toBe(false);
   });
 
   it("getRun devuelve null (no lanza) para un id con formato inválido", async () => {

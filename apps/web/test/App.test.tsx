@@ -324,15 +324,56 @@ describe("<App />", () => {
     await userEvent.selectOptions(screen.getByLabelText("Modo"), "saved-compare");
 
     expect(await screen.findByLabelText(/corrida guardada a/i)).toBeInTheDocument();
+    // Grupo 1 (re-auditoría, pregunta 3): la nota de aislamiento por
+    // navegador aparece justo acá, donde el usuario va a buscar sus
+    // corridas — no en el hero.
+    expect(screen.getByText(/únicas para este navegador y perfil/i)).toBeInTheDocument();
     expect(screen.getAllByText(/semilla 1.*clima slow/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/semilla 2.*clima fast/i).length).toBeGreaterThan(0);
 
     await userEvent.selectOptions(screen.getByLabelText(/corrida guardada a/i), "saved-a");
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("http://localhost:3001/runs/saved-a"));
+    // Grupo 1: getRun ahora manda un segundo argumento (headers con
+    // X-Browser-ID), así que toHaveBeenCalledWith(url) por sí solo ya no
+    // matchea — se busca la llamada por su primer argumento en cambio.
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call: unknown[]) => call[0] === "http://localhost:3001/runs/saved-a")).toBe(true);
+    });
     expect(await screen.findByText(/saved-a/)).toBeInTheDocument();
     await waitFor(() => {
       expect(document.querySelectorAll(".status-line")[0]).toHaveTextContent(/estado:\s*done/i);
     });
+  });
+
+  it("GET /runs/:id con 403 (corrida de otro navegador) muestra el mensaje del servidor, no un error genérico ni pantalla en blanco (Grupo 1)", async () => {
+    const savedRunA = {
+      id: "saved-a",
+      seed: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      config: { climateEnabled: true, climateChangeSpeed: "slow" },
+      endedInExtinction: false,
+      snapshotCount: 0,
+    };
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/runs?")) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ runs: [savedRunA], hasMore: false }) });
+      }
+      if (url.endsWith("/runs/saved-a")) {
+        return Promise.resolve({
+          ok: false,
+          status: 403,
+          json: () => Promise.resolve({ error: "Esta corrida no te pertenece" }),
+        });
+      }
+      return Promise.reject(new Error(`URL inesperada en el test: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await userEvent.selectOptions(screen.getByLabelText("Modo"), "saved-compare");
+    await userEvent.selectOptions(await screen.findByLabelText(/corrida guardada a/i), "saved-a");
+
+    expect(await screen.findByText("Esta corrida no te pertenece")).toBeInTheDocument();
   });
 });

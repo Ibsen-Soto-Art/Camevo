@@ -1,7 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import { connectToRunStream, createRun, type GenerationSnapshot, type RunFormValues, type RunStreamHandle } from "../lib/camevo-client";
+import { connectToRunStream, createRun, saveRun, type GenerationSnapshot, type RunFormValues, type RunStreamHandle } from "../lib/camevo-client";
 
 export type RunStatus = "idle" | "running" | "paused" | "done" | "error";
+
+/** Grupo 1 (Cambio 1B): estado del botón "Guardar esta corrida" — solo aplica a corridas en vivo (RunHandle), nunca a históricas (ya guardadas por definición). */
+export type SaveStatus = "unsaved" | "saving" | "saved" | "error";
 
 /**
  * Forma mínima que necesita RunPanel para renderizar una corrida — sin el
@@ -25,6 +28,10 @@ export interface RunHandle extends RunView {
   readonly resume: () => void;
   /** RF-023: ajusta el ritmo de una corrida ya en curso (running o paused). */
   readonly setSpeed: (msPerGeneration: number) => void;
+  /** Grupo 1 (Cambio 1B): persiste la corrida en Postgres — sin este click, nunca se guarda. */
+  readonly save: () => Promise<void>;
+  readonly saveStatus: SaveStatus;
+  readonly saveError: string | null;
 }
 
 /** Crea una corrida y acumula sus snapshots en vivo — una instancia por panel (RF-025: 1 o 2 en paralelo). */
@@ -33,6 +40,8 @@ export function useRun(): RunHandle {
   const [runId, setRunId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<GenerationSnapshot[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("unsaved");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const statusRef = useRef<RunStatus>("idle");
   const streamRef = useRef<RunStreamHandle | null>(null);
 
@@ -48,6 +57,8 @@ export function useRun(): RunHandle {
       setErrorMessage(null);
       setSnapshots([]);
       setRunId(null);
+      setSaveStatus("unsaved");
+      setSaveError(null);
 
       try {
         const { runId: newRunId } = await createRun(values);
@@ -87,5 +98,18 @@ export function useRun(): RunHandle {
     streamRef.current?.send({ type: "setSpeed", msPerGeneration });
   }, []);
 
-  return { status, runId, snapshots, errorMessage, start, pause, resume, setSpeed };
+  const save = useCallback(async () => {
+    if (!runId) return;
+    setSaveStatus("saving");
+    setSaveError(null);
+    try {
+      await saveRun(runId);
+      setSaveStatus("saved");
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveError(error instanceof Error ? error.message : "Error desconocido");
+    }
+  }, [runId]);
+
+  return { status, runId, snapshots, errorMessage, start, pause, resume, setSpeed, save, saveStatus, saveError };
 }

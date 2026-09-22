@@ -1,7 +1,6 @@
 import type { LiveMessage } from "@camevo/shared-types";
 import type { WebSocket } from "ws";
 import { LiveRunRegistry } from "../live-run-registry";
-import { RunRepository } from "../../persistence/repository/types";
 import { SimulationConfig, advanceGeneration, createSimulationState } from "../../simulation/orchestrator/run";
 import { PlaybackControl } from "./playback-control";
 
@@ -36,43 +35,30 @@ function sleep(ms: number): Promise<void> {
  * determinismo). El chequeo de `closed` se repite después de esperar,
  * por si el socket se cerró mientras estaba pausado.
  *
- * Fase 5 (cierre de la prueba de carga contra el VPS real): `saveSnapshot`
- * NO se espera antes de enviar cada snapshot — se acumula su promesa en
- * `pendingWrites` y se espera UNA sola vez, al final, no una vez por
- * generación. Medido con causalidad confirmada (no solo sospechado): con
- * el await bloqueante por generación, 5 conexiones concurrentes a grilla
- * máxima contra Postgres real tenían un peor caso de ~1.9s de atraso
- * entre snapshots; con la escritura fuera del camino crítico, bajó a
- * ~0.96s (2x mejor), con el promedio prácticamente sin cambios — porque
- * el trabajo total (cómputo + escritura) sigue siendo el mismo, solo que
- * una escritura lenta ya no bloquea EL ENVÍO de ese mensaje en particular
- * (ver docs/04-roadmap-fases.md para la tabla completa). Se descartó
- * batchear escrituras: hubiera agregado estado nuevo (buffer por
- * conexión, vaciarlo al cerrar/extinguirse) para atacar la CANTIDAD de
- * round-trips, cuando el problema confirmado era la LATENCIA de
- * bloquear, no cuántas escrituras se hacían.
+ * Grupo 1 (guardado intencional, identidad por navegador): esta función
+ * YA NO escribe a Postgres en absoluto — antes (Fase 5) guardaba cada
+ * snapshot automáticamente generación a generación (con un fix de
+ * causalidad confirmada para que esa escritura no bloqueara el envío;
+ * ver el historial en docs/04-roadmap-fases.md). Ese mecanismo entero
+ * dejó de existir, no solo se optimizó: las corridas ya no se persisten
+ * solas, solo cuando el usuario hace click en "Guardar esta corrida"
+ * (`POST /runs/:id/save`, ver api/rest/app.ts). Acá, cada snapshot se
+ * acumula en el `LiveRunRegistry` (memoria, barato) en vez de escribirse
+ * a la base — `registry.appendSnapshot` reemplaza a `repository.saveSnapshot`.
  *
- * Un fallo de escritura NUNCA se pierde en silencio: se loguea con
- * runId + generación (único rastro disponible hoy — el proyecto no tiene
- * otro mecanismo de logging/alertas). Esperar `pendingWrites` al final
- * (después de "done", no antes) preserva la garantía de que cuando esta
- * función resuelve, cada snapshot ya fue persistido o su fallo ya quedó
- * registrado — sin que ese vaciado final bloquee el cierre del socket
- * que sí ve el usuario.
- *
- * RF-027: `registry.register(runId, state)` expone el `SimulationState`
- * en vivo (con el genoma y `tasksSolved` reales de cada organismo, que
- * nunca se persisten ni viajan por WS — ver live-run-registry.ts) para
- * que `api/rest` pueda servir el detalle de un organismo bajo demanda.
- * El `try/finally` es la garantía real: sin importar CÓMO termine esta
- * función (corrida completa, extinción, socket cerrado a mitad de
- * camino, una excepción), el registro se limpia — un click después de
- * que la corrida ya no está en vivo debe dar 404, no datos viejos.
+ * `registry.attachState(runId, state)` expone el `SimulationState` en
+ * vivo (con el genoma y `tasksSolved` reales de cada organismo, que
+ * nunca se persisten ni viajan por WS — ver RF-027 en live-run-registry.ts)
+ * para que `api/rest` pueda servir el detalle de un organismo bajo
+ * demanda. `registry.markFinished(runId)` en el `finally` es la garantía
+ * real: sin importar CÓMO termine esta función (corrida completa,
+ * extinción, socket cerrado a mitad de camino, una excepción), queda
+ * registrado que el streaming terminó — desde ahí arranca el reloj de
+ * limpieza si nadie guarda la corrida (ver el TTL en live-run-registry.ts).
  */
 export async function streamRunLive(
   runId: string,
   config: SimulationConfig,
-  repository: RunRepository,
   socket: WebSocket,
   control: PlaybackControl,
   registry: LiveRunRegistry,
@@ -83,22 +69,15 @@ export async function streamRunLive(
   });
 
   const state = createSimulationState(config);
-  registry.register(runId, state);
+  registry.attachState(runId, state);
 
   try {
-    const pendingWrites: Promise<void>[] = [];
-
     for (let i = 0; i < config.updates && !closed; i++) {
       await control.waitIfPaused();
       if (closed) break;
 
       const snapshot = advanceGeneration(state);
-
-      pendingWrites.push(
-        repository.saveSnapshot(runId, snapshot.generation, snapshot as unknown as Record<string, unknown>).catch((err: unknown) => {
-          console.error(`No se pudo persistir el snapshot ${snapshot.generation} de la corrida ${runId}:`, err);
-        }),
-      );
+      registry.appendSnapshot(runId, snapshot);
 
       if (socket.readyState === socket.OPEN) {
         const message: LiveMessage = { type: "snapshot", snapshot };
@@ -115,9 +94,7 @@ export async function streamRunLive(
       socket.send(JSON.stringify(message));
       socket.close();
     }
-
-    await Promise.all(pendingWrites);
   } finally {
-    registry.unregister(runId);
+    registry.markFinished(runId);
   }
 }

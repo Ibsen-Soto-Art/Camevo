@@ -1,11 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createUniformGenome } from "../../src/engine/organism/genome";
-import { createLiveRunRegistry } from "../../src/api/live-run-registry";
+import { createLiveRunRegistry, type LiveRunRegistry } from "../../src/api/live-run-registry";
+import { parseCreateRunRequest } from "../../src/api/rest/config-request";
 import { streamRunLive } from "../../src/api/ws/live-run";
 import { PlaybackControl } from "../../src/api/ws/playback-control";
-import { InMemoryRunRepository } from "../../src/persistence/repository/in-memory-repository";
-import { GenerationSnapshotRecord } from "../../src/persistence/repository/types";
 import { SimulationConfig } from "../../src/simulation/orchestrator/run";
 import type { LiveMessage } from "@camevo/shared-types";
 
@@ -27,6 +27,22 @@ class FakeSocket extends EventEmitter {
   }
 }
 
+/**
+ * Grupo 1 (guardado intencional): `streamRunLive` ya no recibe un
+ * `RunRepository` — lee/escribe todo en `LiveRunRegistry` (memoria). En
+ * producción, la entrada "pending" siempre existe antes de que
+ * `streamRunLive` arranque (la crea `POST /runs`, y el propio handshake
+ * de WS se niega a arrancar el streaming si no la encuentra — ver
+ * server.ts). Estos tests llaman a `streamRunLive` directo, sin pasar
+ * por el handshake, así que tienen que replicar esa misma precondición
+ * a mano con `registerPending`.
+ */
+function registerPending(registry: LiveRunRegistry, runId: string, browserId = "test-browser"): void {
+  const parsed = parseCreateRunRequest({});
+  if ("errors" in parsed) throw new Error("config de prueba inválida");
+  registry.createPending(runId, browserId, parsed.config);
+}
+
 describe("streamRunLive — corte temprano por extinción (Fase 4)", () => {
   it("termina antes de config.updates cuando la población se extingue, y cierra el socket con 'done'", async () => {
     const config: SimulationConfig = {
@@ -41,12 +57,13 @@ describe("streamRunLive — corte temprano por extinción (Fase 4)", () => {
       catastrophe: { intervalGenerations: 1, severity: 1 }, // extinción garantizada en la generación 1 (no dispara en la 0)
     };
 
-    const repository = new InMemoryRunRepository();
-    const run = await repository.createRun({ config: {}, seed: 1 });
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
     const socket = new FakeSocket();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(run.id, config, repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
+    await streamRunLive(runId, config, socket as any, new PlaybackControl(0), registry);
 
     const snapshotMessages = socket.sent.filter((m) => m.type === "snapshot");
     expect(snapshotMessages.length).toBeLessThan(50);
@@ -58,9 +75,8 @@ describe("streamRunLive — corte temprano por extinción (Fase 4)", () => {
     expect(socket.sent.at(-1)).toEqual({ type: "done" });
     expect(socket.closed).toBe(true);
 
-    // Se persistió exactamente lo que se transmitió, no más.
-    const persisted = await repository.listSnapshots(run.id);
-    expect(persisted).toHaveLength(snapshotMessages.length);
+    // Se acumuló en el registro exactamente lo que se transmitió, no más.
+    expect(registry.get(runId)?.snapshots).toHaveLength(snapshotMessages.length);
   });
 });
 
@@ -82,11 +98,12 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
     const seed = 777;
 
     // Corrida A: control de referencia, de punta a punta sin pausar.
-    const repoA = new InMemoryRunRepository();
-    const runA = await repoA.createRun({ config: {}, seed });
+    const runA = randomUUID();
+    const registryA = createLiveRunRegistry();
+    registerPending(registryA, runA);
     const socketA = new FakeSocket();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(runA.id, buildConfig(seed), repoA, socketA as any, new PlaybackControl(0), createLiveRunRegistry());
+    await streamRunLive(runA, buildConfig(seed), socketA as any, new PlaybackControl(0), registryA);
 
     // Corrida B: misma config y semilla, pero arranca YA pausada (antes de
     // que streamRunLive calcule la generación 0) y solo se reanuda después
@@ -94,14 +111,15 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
     // Si pausar no congelara advanceGeneration de verdad, esta espera real
     // introduciría una fuente de no-determinismo (RNF-003) que este test
     // detectaría como una diferencia entre A y B.
-    const repoB = new InMemoryRunRepository();
-    const runB = await repoB.createRun({ config: {}, seed });
+    const runB = randomUUID();
+    const registryB = createLiveRunRegistry();
+    registerPending(registryB, runB);
     const socketB = new FakeSocket();
     const controlB = new PlaybackControl(0);
     controlB.pause();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const streamPromiseB = streamRunLive(runB.id, buildConfig(seed), repoB, socketB as any, controlB, createLiveRunRegistry());
+    const streamPromiseB = streamRunLive(runB, buildConfig(seed), socketB as any, controlB, registryB);
 
     expect(socketB.sent.filter((m) => m.type === "snapshot")).toHaveLength(0); // nada avanzó todavía, sigue en pausa
 
@@ -118,19 +136,21 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
   it("una pausa a mitad de corrida tampoco cambia el resto de las generaciones", async () => {
     const seed = 888;
 
-    const repoA = new InMemoryRunRepository();
-    const runA = await repoA.createRun({ config: {}, seed });
+    const runA = randomUUID();
+    const registryA = createLiveRunRegistry();
+    registerPending(registryA, runA);
     const socketA = new FakeSocket();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(runA.id, buildConfig(seed), repoA, socketA as any, new PlaybackControl(0), createLiveRunRegistry());
+    await streamRunLive(runA, buildConfig(seed), socketA as any, new PlaybackControl(0), registryA);
 
-    const repoB = new InMemoryRunRepository();
-    const runB = await repoB.createRun({ config: {}, seed });
+    const runB = randomUUID();
+    const registryB = createLiveRunRegistry();
+    registerPending(registryB, runB);
     const socketB = new FakeSocket();
     const controlB = new PlaybackControl(5); // pacing chico pero no-cero, para poder pausar "a mitad de camino"
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const streamPromiseB = streamRunLive(runB.id, buildConfig(seed), repoB, socketB as any, controlB, createLiveRunRegistry());
+    const streamPromiseB = streamRunLive(runB, buildConfig(seed), socketB as any, controlB, registryB);
 
     // Espera a que hayan llegado algunas generaciones, pausa, espera de
     // verdad, y reanuda — igual que un usuario pausando a mitad de corrida.
@@ -152,25 +172,18 @@ describe("streamRunLive — pausar congela el motor, no solo el envío (RF-023/R
   });
 });
 
-/** Repositorio con saveSnapshot controlable: demora artificial y/o falla en generaciones elegidas. */
-class ControllableRepository extends InMemoryRunRepository {
-  constructor(
-    private readonly delayMs: number,
-    private readonly failGenerations: ReadonlySet<number> = new Set(),
-  ) {
-    super();
-  }
+// Nota histórica: acá vivía "streamRunLive — saveSnapshot no bloquea el
+// envío (Fase 5)", el fix de causalidad confirmada que hacía que la
+// escritura a Postgres por generación no bloqueara el envío del
+// snapshot (ver docs/04-roadmap-fases.md para la tabla completa). Ese
+// mecanismo entero (pendingWrites, pool.query por generación) dejó de
+// existir con el Grupo 1: ya no hay NINGUNA escritura a Postgres
+// mientras una corrida transmite — el guardado es intencional, no
+// automático (ver la nueva describe de abajo y api/rest/app.ts,
+// POST /runs/:id/save). El test queda documentado acá, no restaurado:
+// no hay nada que "no bloquee" si no hay escritura en absoluto.
 
-  override async saveSnapshot(runId: string, generation: number, snapshot: Record<string, unknown>): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
-    if (this.failGenerations.has(generation)) {
-      throw new Error(`fallo simulado en generación ${generation}`);
-    }
-    return super.saveSnapshot(runId, generation, snapshot);
-  }
-}
-
-describe("streamRunLive — saveSnapshot no bloquea el envío (Fase 5, cierre de la prueba de carga)", () => {
+describe("streamRunLive — acumula en LiveRunRegistry en vez de escribir a Postgres (Grupo 1 + RF-027)", () => {
   function buildConfig(seed: number, updates: number): SimulationConfig {
     return {
       gridWidth: 5,
@@ -184,121 +197,44 @@ describe("streamRunLive — saveSnapshot no bloquea el envío (Fase 5, cierre de
     };
   }
 
-  it("una escritura lenta no retrasa el envío de los snapshots siguientes", async () => {
-    const WRITE_DELAY_MS = 150;
-    const UPDATES = 4;
-    const repository = new ControllableRepository(WRITE_DELAY_MS);
-    const run = await repository.createRun({ config: {}, seed: 1 });
-    const socket = new FakeSocket();
-
-    const start = Date.now();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(run.id, buildConfig(1, UPDATES), repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
-    const totalMs = Date.now() - start;
-
-    expect(socket.sent.filter((m) => m.type === "snapshot")).toHaveLength(UPDATES);
-    // Si cada escritura bloqueara el envío, el total sería >= UPDATES * WRITE_DELAY_MS
-    // (4 * 150 = 600ms). Al no bloquear, las escrituras corren en paralelo entre sí —
-    // el total debería acercarse a UN solo WRITE_DELAY_MS, no a la suma de los cuatro.
-    expect(totalMs).toBeLessThan(UPDATES * WRITE_DELAY_MS);
-  });
-
-  it("por más lenta que sea la escritura, streamRunLive no resuelve hasta que todas terminan (o fallan)", async () => {
-    const WRITE_DELAY_MS = 100;
-    const UPDATES = 3;
-    const repository = new ControllableRepository(WRITE_DELAY_MS);
-    const run = await repository.createRun({ config: {}, seed: 2 });
-    const socket = new FakeSocket();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await streamRunLive(run.id, buildConfig(2, UPDATES), repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
-
-    // Para cuando streamRunLive resolvió, todas las escrituras (que arrancaron
-    // casi simultáneas) ya tuvieron tiempo de sobra para terminar.
-    const persisted = await repository.listSnapshots(run.id);
-    expect(persisted).toHaveLength(UPDATES);
-  });
-
-  it("un fallo de escritura se loguea con runId y generación, y no interrumpe el resto de la corrida", async () => {
-    const UPDATES = 5;
-    const FAILING_GENERATION = 2;
-    const repository = new ControllableRepository(0, new Set([FAILING_GENERATION]));
-    const run = await repository.createRun({ config: {}, seed: 3 });
-    const socket = new FakeSocket();
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await streamRunLive(run.id, buildConfig(3, UPDATES), repository, socket as any, new PlaybackControl(0), createLiveRunRegistry());
-
-      // La corrida completa igual, generación fallida incluida — el fallo de
-      // persistencia no es visible para el cliente WS, solo para el operador.
-      expect(socket.sent.filter((m) => m.type === "snapshot")).toHaveLength(UPDATES);
-      expect(socket.sent.at(-1)).toEqual({ type: "done" });
-
-      // El rastro del fallo existe: no es una pérdida silenciosa.
-      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-      const [message] = consoleErrorSpy.mock.calls[0] as [string, unknown];
-      expect(message).toContain(run.id);
-      expect(message).toContain(String(FAILING_GENERATION));
-
-      // Todas las generaciones MENOS la que falló quedaron persistidas.
-      const persisted = await repository.listSnapshots(run.id);
-      const persistedGenerations = persisted.map((s: GenerationSnapshotRecord) => s.generation);
-      expect(persistedGenerations).toEqual([0, 1, 3, 4]);
-    } finally {
-      consoleErrorSpy.mockRestore();
-    }
-  });
-});
-
-describe("streamRunLive — registro en LiveRunRegistry (RF-027)", () => {
-  function buildConfig(seed: number, updates: number): SimulationConfig {
-    return {
-      gridWidth: 5,
-      gridHeight: 5,
-      baseCyclesPerUpdate: 20,
-      mutationRate: 0.05,
-      ancestorGenomes: [createUniformGenome("replicate", 5)],
-      placementMode: "near-parent",
-      updates,
-      seed,
-    };
-  }
-
-  it("registra el SimulationState mientras la corrida transmite, y lo quita al terminar", async () => {
-    const repository = new InMemoryRunRepository();
-    const run = await repository.createRun({ config: {}, seed: 1 });
-    const socket = new FakeSocket();
+  it("acumula el SimulationState y cada snapshot mientras transmite, y marca la entrada como terminada al final (sin borrarla)", async () => {
+    const runId = randomUUID();
     const registry = createLiveRunRegistry();
+    registerPending(registry, runId, "browser-x");
+    const socket = new FakeSocket();
 
-    expect(registry.get(run.id)).toBeUndefined(); // todavía no arrancó
+    expect(registry.get(runId)?.state).toBeNull(); // pending: todavía no arrancó el streaming
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const streamPromise = streamRunLive(run.id, buildConfig(1, 5), repository, socket as any, new PlaybackControl(20), registry);
+    const streamPromise = streamRunLive(runId, buildConfig(1, 5), socket as any, new PlaybackControl(20), registry);
 
-    // A mitad de camino (ritmo real, no 0), el registro debe tener la corrida.
+    // A mitad de camino (ritmo real, no 0), el estado debe estar adjunto.
     await new Promise((resolve) => setTimeout(resolve, 15));
-    expect(registry.get(run.id)).toBeDefined();
+    expect(registry.get(runId)?.state).not.toBeNull();
 
     await streamPromise;
-    expect(registry.get(run.id)).toBeUndefined(); // limpiado al terminar
+    const entry = registry.get(runId);
+    expect(entry).toBeDefined(); // Grupo 1: a diferencia de RF-027 solo, la entrada NO se borra al terminar — hace falta para poder guardarla después
+    expect(entry?.snapshots.length).toBeGreaterThan(0);
+    expect(entry?.finishedAt).not.toBeNull();
+    expect(entry?.saved).toBe(false);
+    expect(entry?.browserId).toBe("browser-x");
   });
 
-  it("limpia el registro incluso si el socket se cierra a mitad de la corrida (no solo al completarse normalmente)", async () => {
-    const repository = new InMemoryRunRepository();
-    const run = await repository.createRun({ config: {}, seed: 2 });
-    const socket = new FakeSocket();
+  it("marca finishedAt incluso si el socket se cierra a mitad de la corrida (no solo al completarse normalmente)", async () => {
+    const runId = randomUUID();
     const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    const socket = new FakeSocket();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const streamPromise = streamRunLive(run.id, buildConfig(2, 50), repository, socket as any, new PlaybackControl(20), registry);
+    const streamPromise = streamRunLive(runId, buildConfig(2, 50), socket as any, new PlaybackControl(20), registry);
 
     await new Promise((resolve) => setTimeout(resolve, 15));
-    expect(registry.get(run.id)).toBeDefined();
+    expect(registry.get(runId)?.finishedAt).toBeNull();
 
     socket.emit("close");
     await streamPromise;
-    expect(registry.get(run.id)).toBeUndefined();
+    expect(registry.get(runId)?.finishedAt).not.toBeNull();
   });
 });

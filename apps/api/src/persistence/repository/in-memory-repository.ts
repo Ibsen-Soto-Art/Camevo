@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { CreateRunInput, GenerationSnapshotRecord, ListRunsOptions, ListRunsResult, RunRecord, RunRepository, RunSummaryRecord } from "./types";
 
 /**
@@ -14,10 +13,11 @@ export class InMemoryRunRepository implements RunRepository {
 
   async createRun(input: CreateRunInput): Promise<RunRecord> {
     const run: RunRecord = {
-      id: randomUUID(),
+      id: input.id,
       config: input.config,
       seed: input.seed,
       createdAt: new Date().toISOString(),
+      browserId: input.browserId,
     };
     this.runs.set(run.id, run);
     this.snapshots.set(run.id, []);
@@ -28,10 +28,10 @@ export class InMemoryRunRepository implements RunRepository {
     return this.runs.get(id) ?? null;
   }
 
-  async listRuns({ limit, offset }: ListRunsOptions): Promise<ListRunsResult> {
-    const sorted = [...this.runs.values()].sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
-    );
+  async listRuns({ limit, offset, browserId }: ListRunsOptions): Promise<ListRunsResult> {
+    const sorted = [...this.runs.values()]
+      .filter((run) => run.browserId === browserId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
     const page = sorted.slice(offset, offset + limit);
 
     const runs: RunSummaryRecord[] = page.map((run) => {

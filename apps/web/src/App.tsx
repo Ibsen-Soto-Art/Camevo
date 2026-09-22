@@ -302,6 +302,20 @@ export default function App() {
       {mode === "saved-compare" ? (
         <>
           <div className="saved-compare-header">
+            {/*
+              Grupo 1: el aislamiento por browser_id es correcto por diseño
+              (sin login, un UUID por navegador en localStorage) — pero
+              silencioso, así que quien guardó una corrida en una ventana
+              normal y después la busca en incógnito (u otro navegador) se
+              encuentra con una lista vacía sin explicación. Este es el
+              momento exacto donde avisarlo: justo donde el usuario va a
+              buscar sus corridas, no antes (en el hero sería prematuro,
+              sin nada todavía guardado para que la advertencia importe).
+            */}
+            <p className="form-note">
+              Tus corridas guardadas son únicas para este navegador y perfil. Si borrás el caché o usás modo incógnito, no
+              estarán disponibles.
+            </p>
             {savedRunsError && <p className="error">{savedRunsError}</p>}
             <label>
               Corrida guardada A
@@ -569,6 +583,9 @@ export default function App() {
                   gridHeight={base.gridHeight}
                   numAncestors={DEFAULT_NUM_ANCESTORS}
                   chartHeight={320}
+                  onSave={runA.save}
+                  saveStatus={runA.saveStatus}
+                  saveError={runA.saveError}
                 />
                 <RunPanel
                   title={`Corrida B — velocidad ${speedB}`}
@@ -579,6 +596,9 @@ export default function App() {
                   gridHeight={base.gridHeight}
                   numAncestors={DEFAULT_NUM_ANCESTORS}
                   chartHeight={320}
+                  onSave={runB.save}
+                  saveStatus={runB.saveStatus}
+                  saveError={runB.saveError}
                 />
               </div>
             ) : (
@@ -590,6 +610,9 @@ export default function App() {
                 gridWidth={base.gridWidth}
                 gridHeight={base.gridHeight}
                 numAncestors={DEFAULT_NUM_ANCESTORS}
+                onSave={runSingle.save}
+                saveStatus={runSingle.saveStatus}
+                saveError={runSingle.saveError}
               />
             )}
           </div>

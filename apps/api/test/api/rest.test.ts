@@ -3,9 +3,13 @@ import { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createLiveRunRegistry, LiveRunRegistry } from "../../src/api/live-run-registry";
 import { createApp, resolveAllowedOrigins } from "../../src/api/rest/app";
+import { parseCreateRunRequest } from "../../src/api/rest/config-request";
 import { createUniformGenome } from "../../src/engine/organism/genome";
 import { InMemoryRunRepository } from "../../src/persistence/repository/in-memory-repository";
-import { SimulationConfig, advanceGeneration, createSimulationState } from "../../src/simulation/orchestrator/run";
+import { SimulationConfig, SimulationState, advanceGeneration, createSimulationState } from "../../src/simulation/orchestrator/run";
+
+const BROWSER_A = "browser-test-aaaaaaaa";
+const BROWSER_B = "browser-test-bbbbbbbb";
 
 describe("api/rest", () => {
   let server: http.Server;
@@ -24,12 +28,27 @@ describe("api/rest", () => {
 
   afterAll(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
-  async function postRun(body: unknown) {
+  async function postRun(body: unknown, browserId: string = BROWSER_A) {
     return fetch(`${baseUrl}/runs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Browser-ID": browserId },
       body: JSON.stringify(body),
     });
+  }
+
+  async function saveRun(runId: string, browserId: string = BROWSER_A) {
+    return fetch(`${baseUrl}/runs/${runId}/save`, {
+      method: "POST",
+      headers: { "X-Browser-ID": browserId },
+    });
+  }
+
+  async function getRunById(runId: string, browserId: string = BROWSER_A) {
+    return fetch(`${baseUrl}/runs/${runId}`, { headers: { "X-Browser-ID": browserId } });
+  }
+
+  async function listRuns(query = "", browserId: string = BROWSER_A) {
+    return fetch(`${baseUrl}/runs${query}`, { headers: { "X-Browser-ID": browserId } });
   }
 
   it("POST /runs crea una corrida con valores por defecto razonables", async () => {
@@ -76,15 +95,22 @@ describe("api/rest", () => {
   });
 
   it("GET /runs/:id devuelve 404 si no existe", async () => {
-    const res = await fetch(`${baseUrl}/runs/no-existe`);
+    const res = await getRunById("no-existe");
     expect(res.status).toBe(404);
   });
 
-  it("GET /runs/:id devuelve la corrida recién creada, sin snapshots todavía", async () => {
-    const createRes = await postRun({});
-    const { runId } = (await createRes.json()) as { runId: string };
+  it("GET /runs/:id devuelve 404 para una corrida creada pero todavía NO guardada (Grupo 1: el guardado es intencional, no automático)", async () => {
+    const { runId } = (await (await postRun({})).json()) as { runId: string };
 
-    const res = await fetch(`${baseUrl}/runs/${runId}`);
+    const res = await getRunById(runId);
+    expect(res.status).toBe(404);
+  });
+
+  it("GET /runs/:id devuelve la corrida recién guardada, sin snapshots (nada transmitió nada en este test)", async () => {
+    const { runId } = (await (await postRun({})).json()) as { runId: string };
+    await saveRun(runId);
+
+    const res = await getRunById(runId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { run: { id: string }; snapshots: unknown[] };
     expect(body.run.id).toBe(runId);
@@ -92,29 +118,74 @@ describe("api/rest", () => {
   });
 
   it("GET /runs/:id no incluye endedInExtinction/snapshotCount en run (esos solo viven en RunSummary)", async () => {
-    const createRes = await postRun({});
-    const { runId } = (await createRes.json()) as { runId: string };
+    const { runId } = (await (await postRun({})).json()) as { runId: string };
+    await saveRun(runId);
 
-    const res = await fetch(`${baseUrl}/runs/${runId}`);
+    const res = await getRunById(runId);
     const body = (await res.json()) as { run: Record<string, unknown> };
     expect(body.run).not.toHaveProperty("endedInExtinction");
     expect(body.run).not.toHaveProperty("snapshotCount");
   });
 
+  it("GET /runs/:id devuelve 403 (no 404) si la corrida existe pero es de OTRO browser_id", async () => {
+    const { runId } = (await (await postRun({}, BROWSER_A)).json()) as { runId: string };
+    await saveRun(runId, BROWSER_A);
+
+    const res = await getRunById(runId, BROWSER_B);
+    expect(res.status).toBe(403);
+  });
+
+  describe("POST /runs/:runId/save (Grupo 1: guardado intencional)", () => {
+    it("persiste la corrida y responde 201 con alreadySaved:false", async () => {
+      const { runId } = (await (await postRun({})).json()) as { runId: string };
+
+      const res = await saveRun(runId);
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { runId: string; alreadySaved: boolean };
+      expect(body.runId).toBe(runId);
+      expect(body.alreadySaved).toBe(false);
+    });
+
+    it("un segundo click (ya guardada) responde 200 con alreadySaved:true, sin duplicar ni fallar", async () => {
+      const { runId } = (await (await postRun({})).json()) as { runId: string };
+      await saveRun(runId);
+
+      const res = await saveRun(runId);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { runId: string; alreadySaved: boolean };
+      expect(body.alreadySaved).toBe(true);
+    });
+
+    it("404 si el runId nunca existió en el registro (o ya se limpió por TTL / reinicio del servidor)", async () => {
+      const res = await saveRun("run-que-nunca-existio");
+      expect(res.status).toBe(404);
+    });
+
+    it("403 si la corrida es de OTRO browser_id", async () => {
+      const { runId } = (await (await postRun({}, BROWSER_A)).json()) as { runId: string };
+
+      const res = await saveRun(runId, BROWSER_B);
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe("GET /runs (RF-025: selector de comparación histórica)", () => {
-    it("lista las corridas guardadas más recientes primero, con paginación por query params", async () => {
+    it("lista las corridas GUARDADAS más recientes primero, con paginación por query params", async () => {
       // El repositorio se comparte entre todos los tests de este describe
-      // (beforeAll), así que ya existen corridas de tests anteriores: no
-      // podemos asumir un total exacto, solo que las dos que creamos aquí
-      // quedan al frente (más recientes) y que hasMore refleja el total real.
+      // (beforeAll), así que ya existen corridas guardadas de tests
+      // anteriores: no podemos asumir un total exacto, solo que las dos
+      // que creamos y guardamos aquí quedan al frente (más recientes) y
+      // que hasMore refleja el total real.
       const { runId: firstId } = (await (await postRun({})).json()) as { runId: string };
+      await saveRun(firstId);
       await new Promise((resolve) => setTimeout(resolve, 5));
       const { runId: secondId } = (await (await postRun({})).json()) as { runId: string };
+      await saveRun(secondId);
 
-      const totalBody = (await (await fetch(`${baseUrl}/runs?limit=1000`)).json()) as { runs: unknown[] };
+      const totalBody = (await (await listRuns("?limit=1000")).json()) as { runs: unknown[] };
       const total = totalBody.runs.length;
 
-      const res = await fetch(`${baseUrl}/runs?limit=1&offset=0`);
+      const res = await listRuns("?limit=1&offset=0");
       expect(res.status).toBe(200);
       const body = (await res.json()) as { runs: { id: string }[]; hasMore: boolean };
 
@@ -122,15 +193,16 @@ describe("api/rest", () => {
       expect(body.runs[0]?.id).toBe(secondId);
       expect(body.hasMore).toBe(total > 1);
 
-      const page2 = (await (await fetch(`${baseUrl}/runs?limit=1&offset=1`)).json()) as { runs: { id: string }[]; hasMore: boolean };
+      const page2 = (await (await listRuns("?limit=1&offset=1")).json()) as { runs: { id: string }[]; hasMore: boolean };
       expect(page2.runs[0]?.id).toBe(firstId);
       expect(page2.hasMore).toBe(total > 2);
     });
 
     it("cada entrada incluye endedInExtinction y snapshotCount", async () => {
       const { runId } = (await (await postRun({})).json()) as { runId: string };
+      await saveRun(runId);
 
-      const res = await fetch(`${baseUrl}/runs?limit=100`);
+      const res = await listRuns("?limit=100");
       const body = (await res.json()) as { runs: { id: string; endedInExtinction: boolean; snapshotCount: number }[] };
       const entry = body.runs.find((r) => r.id === runId);
 
@@ -139,10 +211,41 @@ describe("api/rest", () => {
     });
 
     it("ignora un limit fuera de rango o no numérico usando el default", async () => {
-      const res = await fetch(`${baseUrl}/runs?limit=not-a-number`);
+      const res = await listRuns("?limit=not-a-number");
       expect(res.status).toBe(200);
       const body = (await res.json()) as { runs: unknown[] };
       expect(Array.isArray(body.runs)).toBe(true);
+    });
+
+    // Grupo 1 (Cambio 1C): esto es lo que realmente hace nuevo el
+    // aislamiento por navegador a nivel de API completa (no solo del
+    // repositorio, ya cubierto en in-memory-repository.test.ts).
+    it("nunca devuelve corridas guardadas de OTRO browser_id, aunque existan y sean más recientes", async () => {
+      const { runId } = (await (await postRun({}, BROWSER_B)).json()) as { runId: string };
+      await saveRun(runId, BROWSER_B);
+
+      const res = await listRuns("?limit=1000", BROWSER_A);
+      const body = (await res.json()) as { runs: { id: string }[] };
+      expect(body.runs.some((r) => r.id === runId)).toBe(false);
+    });
+  });
+
+  describe("X-Browser-ID (Grupo 1): requerido en las rutas que exponen datos de un navegador", () => {
+    it("400 si falta el header, en cualquiera de las rutas que lo requieren", async () => {
+      const responses = await Promise.all([
+        fetch(`${baseUrl}/runs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }),
+        fetch(`${baseUrl}/runs`),
+        fetch(`${baseUrl}/runs/algun-id`),
+        fetch(`${baseUrl}/runs/algun-id/save`, { method: "POST" }),
+      ]);
+      for (const res of responses) {
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it("400 si el header es demasiado corto para ser un id razonable", async () => {
+      const res = await postRun({}, "corto");
+      expect(res.status).toBe(400);
     });
   });
 
@@ -177,7 +280,9 @@ describe("api/rest", () => {
     // generación ACTUAL de una corrida en vivo en ESTE proceso — nunca
     // generaciones pasadas ni corridas ya guardadas. El registro es un
     // Map en memoria (ver live-run-registry.ts), así que estos tests lo
-    // pueblan a mano, simulando lo que streamRunLive haría en producción.
+    // pueblan a mano, simulando lo que POST /runs + streamRunLive harían
+    // en producción (Grupo 1: ya no existe un `register` de una sola
+    // llamada — hay que pasar por "pending" primero, como en producción).
     function buildLiveState() {
       const config: SimulationConfig = {
         gridWidth: 1,
@@ -195,9 +300,16 @@ describe("api/rest", () => {
       return { state, organismId };
     }
 
+    function registerLiveState(runId: string, state: SimulationState) {
+      const parsed = parseCreateRunRequest({});
+      if ("errors" in parsed) throw new Error("config de prueba inválida");
+      liveRunRegistry.createPending(runId, BROWSER_A, parsed.config);
+      liveRunRegistry.attachState(runId, state);
+    }
+
     it("devuelve los cuatro campos acordados cuando la corrida está en vivo y el organismo existe", async () => {
       const { state, organismId } = buildLiveState();
-      liveRunRegistry.register("run-viva", state);
+      registerLiveState("run-viva", state);
 
       const res = await fetch(`${baseUrl}/runs/run-viva/organisms/${organismId}`);
       expect(res.status).toBe(200);
@@ -207,7 +319,7 @@ describe("api/rest", () => {
       expect(typeof body.fitness).toBe("number");
       expect(Array.isArray(body.tasksSolved)).toBe(true);
 
-      liveRunRegistry.unregister("run-viva");
+      liveRunRegistry.remove("run-viva");
     });
 
     it("404 con mensaje específico si la corrida no está activa en el servidor (terminada, o el servidor se reinició)", async () => {
@@ -217,16 +329,42 @@ describe("api/rest", () => {
       expect(body.error).toBe("La corrida ya no está activa en el servidor");
     });
 
+    it("404 con mensaje específico si la corrida ya TERMINÓ (Grupo 1: la entrada sigue en el registro para poder guardarla, pero eso no debe resucitar RF-027)", async () => {
+      const { state, organismId } = buildLiveState();
+      registerLiveState("run-terminada", state);
+      liveRunRegistry.markFinished("run-terminada");
+
+      const res = await fetch(`${baseUrl}/runs/run-terminada/organisms/${organismId}`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("La corrida ya no está activa en el servidor");
+
+      liveRunRegistry.remove("run-terminada");
+    });
+
+    it("404 con mensaje específico si la corrida existe pero sigue 'pending' (todavía no arrancó el streaming)", async () => {
+      const parsed = parseCreateRunRequest({});
+      if ("errors" in parsed) throw new Error("config de prueba inválida");
+      liveRunRegistry.createPending("run-pendiente", BROWSER_A, parsed.config);
+
+      const res = await fetch(`${baseUrl}/runs/run-pendiente/organisms/algun-id`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("La corrida ya no está activa en el servidor");
+
+      liveRunRegistry.remove("run-pendiente");
+    });
+
     it("404 con mensaje específico y DISTINTO si la corrida está viva pero ESE organismo puntual ya no existe", async () => {
       const { state } = buildLiveState();
-      liveRunRegistry.register("run-viva-2", state);
+      registerLiveState("run-viva-2", state);
 
       const res = await fetch(`${baseUrl}/runs/run-viva-2/organisms/id-que-nunca-existio`);
       expect(res.status).toBe(404);
       const body = (await res.json()) as { error: string };
       expect(body.error).toBe("Este organismo ya no existe — fue reemplazado o murió antes de que pudieras inspeccionarlo");
 
-      liveRunRegistry.unregister("run-viva-2");
+      liveRunRegistry.remove("run-viva-2");
     });
   });
 });

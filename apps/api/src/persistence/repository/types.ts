@@ -10,6 +10,8 @@ export interface RunRecord {
   readonly config: Record<string, unknown>;
   readonly seed: number;
   readonly createdAt: string;
+  /** Grupo 1 (identidad por navegador): dueño de la corrida — ver api/rest/app.ts para el chequeo de 403 (nunca se filtra acá, eso es decisión de la capa REST). */
+  readonly browserId: string;
 }
 
 export interface GenerationSnapshotRecord {
@@ -18,9 +20,20 @@ export interface GenerationSnapshotRecord {
   readonly snapshot: Record<string, unknown>;
 }
 
+/**
+ * Grupo 1 (guardado intencional): `id` es OBLIGATORIO acá — a diferencia
+ * de antes, cuando el repositorio generaba su propio id al crear la
+ * corrida. Ahora el id ya existe desde que `POST /runs` lo entregó al
+ * cliente (para el streaming en vivo, ver LiveRunRegistry) y `createRun`
+ * recién se llama más tarde, al guardar — tiene que persistir con ESE
+ * mismo id, no uno nuevo, para que la URL/referencia que el usuario ya
+ * vio siga siendo válida después de guardar.
+ */
 export interface CreateRunInput {
+  readonly id: string;
   readonly config: Record<string, unknown>;
   readonly seed: number;
+  readonly browserId: string;
 }
 
 /**
@@ -39,6 +52,8 @@ export interface RunSummaryRecord extends RunRecord {
 export interface ListRunsOptions {
   readonly limit: number;
   readonly offset: number;
+  /** Grupo 1 (aislamiento por navegador): solo corridas de este browser_id — nunca todas. */
+  readonly browserId: string;
 }
 
 export interface ListRunsResult {
