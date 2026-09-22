@@ -317,28 +317,30 @@ export default function App() {
               estarán disponibles.
             </p>
             {savedRunsError && <p className="error">{savedRunsError}</p>}
-            <label>
-              Corrida guardada A
-              <select value={savedIdA ?? ""} onChange={(e) => setSavedIdA(e.target.value || null)}>
-                <option value="">— seleccionar —</option>
-                {savedRuns.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    {formatRunSummary(run)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Corrida guardada B
-              <select value={savedIdB ?? ""} onChange={(e) => setSavedIdB(e.target.value || null)}>
-                <option value="">— seleccionar —</option>
-                {savedRuns.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    {formatRunSummary(run)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="saved-compare-selects">
+              <label>
+                Corrida guardada A
+                <select value={savedIdA ?? ""} onChange={(e) => setSavedIdA(e.target.value || null)}>
+                  <option value="">— seleccionar —</option>
+                  {savedRuns.map((run) => (
+                    <option key={run.id} value={run.id}>
+                      {formatRunSummary(run)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Corrida guardada B
+                <select value={savedIdB ?? ""} onChange={(e) => setSavedIdB(e.target.value || null)}>
+                  <option value="">— seleccionar —</option>
+                  {savedRuns.map((run) => (
+                    <option key={run.id} value={run.id}>
+                      {formatRunSummary(run)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
 
           <div className="compare-grid">

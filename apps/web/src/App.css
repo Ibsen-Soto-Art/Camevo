@@ -2,16 +2,22 @@
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-body);
 }
 
 /* Ajuste 5 (auditoría de interfaz): antes sin regla propia (estilo default del navegador) — el título principal ahora se diferencia deliberadamente del resto, en vez de depender de que el h1 default ya "se vea más grande". */
 .camevo-app h1 {
-  margin: 0;
-  font-size: 2.1rem;
-  font-weight: 800;
+  font-size: 2.75rem;
+  font-weight: 600;
   letter-spacing: -0.01em;
-  color: #142a1e;
+  line-height: 1.1;
+  color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+  .camevo-app h1 {
+    font-size: 1.875rem;
+  }
 }
 
 /* RNF-004 (2ª verificación con persona real): hero de 3 líneas cortas, pensado para caber sin scroll en mobile — de ahí line-height ajustado y margin chico, no un bloque de texto largo. */
@@ -21,20 +27,20 @@
 
 .hero-line {
   margin: 0.15rem 0;
-  color: #333;
+  color: var(--color-text-secondary);
   font-size: 0.98rem;
   line-height: 1.35;
 }
 
 .hero-cta {
-  font-weight: 700;
-  color: #142a1e;
+  font-weight: 600;
+  color: var(--color-accent);
 }
 
 /* Labels de controles diferenciados del contenido principal (que sigue en 1rem por defecto) — antes solo eran un poco más chicos (0.85rem); ahora también distintos en peso/color/tracking, no solo en tamaño. */
 .run-form label,
 .mode-select label {
-  color: #666;
+  color: var(--color-text-secondary);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -64,6 +70,9 @@
  * que OBSERVA), una sola columna apilada en mobile/tablet angosto. Antes
  * no existía ningún grid/flex a nivel de página — todo era un solo
  * bloque centrado de arriba a abajo.
+ *
+ * Grupo 2 (rediseño visual, layout desktop aprobado): 30%/70% — antes era
+ * 32%/68%, ajustado a la proporción exacta de la propuesta.
  */
 .app-layout {
   display: grid;
@@ -74,7 +83,7 @@
 
 @media (min-width: 900px) {
   .app-layout {
-    grid-template-columns: minmax(280px, 32%) 1fr;
+    grid-template-columns: minmax(280px, 30%) 1fr;
   }
 }
 
@@ -85,15 +94,17 @@
 }
 
 .config-details {
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 0.75rem 1rem;
+  background: var(--color-bg-elevated);
 }
 
 .config-details summary {
   cursor: pointer;
   font-weight: 600;
   padding: 0.25rem 0;
+  color: var(--color-text);
 }
 
 .config-details .run-form {
@@ -122,20 +133,52 @@
 }
 
 .run-form input,
-.run-form select {
+.run-form select,
+.mode-select select,
+.saved-compare-header select {
   padding: 0.4rem;
   font-size: 1rem;
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
 }
 
-.run-form button {
+/* Botones primarios (acento teal), acento secundario violeta en hover — ver justificación de paleta: "acento secundario: highlights, hover states". */
+.run-form button,
+.playback-controls button,
+.save-run button {
   padding: 0.6rem 1rem;
-  font-size: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: var(--font-body);
   cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: #0b1512;
+  transition: background-color 150ms ease;
+}
+
+.run-form button:hover:not(:disabled),
+.playback-controls button:hover:not(:disabled),
+.save-run button:hover:not(:disabled) {
+  background: var(--color-accent-secondary);
+}
+
+.run-form button:disabled,
+.playback-controls button:disabled,
+.save-run button:disabled {
+  cursor: not-allowed;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
 }
 
 .status-line {
   font-size: 0.9rem;
-  color: #333;
+  color: var(--color-text-secondary);
 }
 
 /* El runId completo (un UUID) envolvía en 3 líneas en mobile — se trunca visualmente, el id completo sigue en el atributo title. */
@@ -146,10 +189,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0 0.3rem;
 }
 
 .error {
-  color: #b00020;
+  color: var(--color-error);
+}
+
+/* Grupo 1 (Cambio 1B): confirmación de guardado exitoso. */
+.save-confirmation {
+  color: var(--color-success);
+  font-size: 0.85rem;
+}
+
+.save-run {
+  margin: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
 }
 
 .chart-container {
@@ -161,36 +222,46 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 1rem;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 0.75rem 1rem;
+  background: var(--color-bg-elevated);
 }
 
 .playback-controls h3 {
   width: 100%;
   margin: 0 0 0.25rem;
   font-size: 0.85rem;
-  color: #555;
+  font-family: var(--font-body);
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 .playback-controls button {
   padding: 0.5rem 1rem;
   font-size: 0.95rem;
-  cursor: pointer;
 }
 
 .playback-controls label {
   display: flex;
   flex-direction: column;
   font-size: 0.8rem;
+  color: var(--color-text-secondary);
   gap: 0.25rem;
 }
 
 .saved-compare-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  flex-direction: column;
+  gap: 0.75rem;
   margin: 1.5rem 0 1rem;
+}
+
+.saved-compare-header .saved-compare-selects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
 }
 
 .saved-compare-header label {
@@ -209,8 +280,6 @@
 .saved-compare-header select {
   width: 100%;
   max-width: 100%;
-  padding: 0.4rem;
-  font-size: 1rem;
 }
 
 .compare-grid {
@@ -222,7 +291,7 @@
 
 /*
  * 1200px, no 800px: con la columna de controles del rediseño responsive
- * ocupando ~32% del viewport, dos paneles lado a lado en la columna
+ * ocupando ~30% del viewport, dos paneles lado a lado en la columna
  * derecha necesitan más ancho total de pantalla que antes para no verse
  * apretados (antes los paneles ocupaban toda la página, ahora comparten
  * espacio con la columna izquierda).
@@ -234,35 +303,44 @@
 }
 
 .run-panel {
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 1rem;
+  background: var(--color-bg-elevated);
 }
 
+/* Grupo 2: título de cada corrida usa la escala "H2 secciones" de la propuesta (Fraunces, 1.75rem desktop / 1.375rem mobile). */
 .run-panel h2 {
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: 1.75rem;
+  font-weight: 500;
   margin: 0 0 0.75rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid #e3e7ea;
+  border-bottom: 1px solid var(--color-border);
+}
+
+@media (max-width: 640px) {
+  .run-panel h2 {
+    font-size: 1.375rem;
+  }
 }
 
 .explanatory-panel {
   margin-top: 1.5rem;
   padding: 0.75rem 1rem;
-  background: #f4f6f8;
-  border-left: 3px solid #1f77b4;
+  background: var(--color-bg);
+  border-left: 3px solid var(--color-accent);
   border-radius: 4px;
   font-size: 0.9rem;
   line-height: 1.4;
+  color: var(--color-text);
 }
 
 .explanatory-panel .panel-note {
   margin-top: 0.5rem;
   margin-bottom: 0;
   padding-top: 0.5rem;
-  border-top: 1px solid #dbe1e6;
-  color: #555;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
   font-size: 0.8rem;
   font-style: italic;
 }
@@ -271,9 +349,9 @@
   margin-top: 0.5rem;
   margin-bottom: 0;
   padding: 0.5rem 0.7rem;
-  background: #fbf7ec;
-  border-left: 3px solid #a67c00;
-  color: #4a3c00;
+  background: rgba(245, 158, 11, 0.12);
+  border-left: 3px solid var(--color-warning);
+  color: #f3d9a4;
   font-size: 0.8rem;
 }
 
@@ -282,12 +360,12 @@
   margin-top: 0.3rem;
   font-style: normal;
   font-size: 0.75rem;
-  color: #6b5a1a;
+  color: var(--color-text-secondary);
 }
 
 .form-note {
   margin: 0;
-  color: #555;
+  color: var(--color-text-secondary);
   font-size: 0.82rem;
   font-style: italic;
 }
@@ -305,24 +383,28 @@
 
 .scenario-card {
   padding: 0.5rem 0.9rem;
-  border: 1px solid #b7c2cb;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
   cursor: pointer;
+  font-family: var(--font-body);
   font-size: 0.85rem;
 }
 
 .scenario-card.selected {
-  border-color: #2d6a4f;
-  background: #eaf5ee;
+  border-color: var(--color-accent);
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--color-text);
   font-weight: 600;
 }
 
 .scenario-narrative {
   margin: 0.5rem 0 0;
   padding: 0.6rem 0.8rem;
-  background: #f3f6f4;
-  border-left: 3px solid #2d6a4f;
+  background: var(--color-bg-elevated);
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text);
   font-size: 0.88rem;
   line-height: 1.4;
 }
@@ -331,7 +413,7 @@
 .chart-x-axis-label {
   margin: 0.5rem 0 0;
   text-align: center;
-  color: #666;
+  color: var(--color-text-secondary);
   font-size: 0.82rem;
 }
 
@@ -343,16 +425,17 @@
 .chart-tooltip {
   max-width: 280px;
   padding: 0.6rem 0.7rem;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.8rem;
   white-space: normal;
+  color: var(--color-text);
 }
 
 .chart-hover-placeholder {
   margin: 0;
-  color: #888;
+  color: var(--color-text-secondary);
   font-style: italic;
 }
 
@@ -376,14 +459,14 @@
 
 .chart-tooltip-description {
   margin: 0.1rem 0 0;
-  color: #555;
+  color: var(--color-text-secondary);
   font-size: 0.76rem;
   line-height: 1.3;
 }
 
 .chart-caption {
   margin-top: 0.6rem;
-  color: #777;
+  color: var(--color-text-secondary);
   font-size: 0.78rem;
   line-height: 1.35;
 }
@@ -391,7 +474,7 @@
 .population-grid {
   margin-top: 1.5rem;
   padding-top: 1.25rem;
-  border-top: 1px solid #e3e7ea;
+  border-top: 1px solid var(--color-border);
   width: 100%;
 }
 
@@ -407,7 +490,7 @@
      solo una red de seguridad por si el JS todavía no corrió. */
   display: block;
   max-width: 100%;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
 }
 
@@ -434,7 +517,7 @@
 
 .population-grid-hint {
   margin: 0.5rem 0 0;
-  color: #777;
+  color: var(--color-text-secondary);
   font-size: 0.78rem;
   font-style: italic;
 }
@@ -442,22 +525,23 @@
 .organism-inspect-panel {
   margin-top: 0.6rem;
   padding: 0.6rem 0.8rem;
-  background: #f4f6f8;
-  border-left: 3px solid #1f77b4;
+  background: var(--color-bg);
+  border-left: 3px solid var(--color-accent);
   border-radius: 4px;
   font-size: 0.85rem;
+  color: var(--color-text);
 }
 
 .organism-inspect-loading,
 .organism-inspect-empty {
   margin: 0;
-  color: #666;
+  color: var(--color-text-secondary);
   font-style: italic;
 }
 
 .organism-inspect-error {
   margin: 0;
-  color: #b00020;
+  color: var(--color-error);
 }
 
 .organism-inspect-details {
@@ -473,7 +557,7 @@
   gap: 1rem;
   margin-top: 0.6rem;
   font-size: 0.78rem;
-  color: #555;
+  color: var(--color-text-secondary);
 }
 
 .grid-legend-item {
@@ -494,6 +578,7 @@
   border-radius: 5px;
 }
 
+/* Puente visual con "Fitness promedio" en RunChart — mismo azul #1f77b4 deliberadamente, no un token de UI (ver comentario en PopulationGrid.tsx). */
 .grid-legend-label-fitness-high {
   color: #1f77b4;
   font-weight: 600;
@@ -509,7 +594,7 @@
 
 .population-grid-caption {
   margin-top: 0.4rem;
-  color: #777;
+  color: var(--color-text-secondary);
   font-size: 0.78rem;
   line-height: 1.35;
 }

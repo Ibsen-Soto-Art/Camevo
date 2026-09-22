@@ -52,6 +52,27 @@ export default function RunPanel({
         </p>
       )}
       {run.errorMessage && <p className="error">{run.errorMessage}</p>}
+      <div className="chart-container">
+        <RunChart snapshots={run.snapshots} height={chartHeight} />
+      </div>
+      {run.snapshots.length > 0 && (
+        <>
+          <PopulationGrid snapshots={run.snapshots} gridWidth={gridWidth} gridHeight={gridHeight} runId={run.runId} />
+          <ExplanatoryPanel
+            climateEnabled={climateEnabled}
+            climateChangeSpeed={climateChangeSpeed}
+            snapshots={run.snapshots}
+            numAncestors={numAncestors}
+          />
+        </>
+      )}
+      {/*
+        Grupo 2 (layout aprobado): "Guardar esta corrida" se mueve al
+        cierre de la narrativa — después de que el usuario ya vio el
+        gráfico, la grilla y la explicación del resultado, no antes (donde
+        vivía en la implementación original de Grupo 1, pegado al
+        status-line, antes de que hubiera nada que "cerrar").
+      */}
       {onSave && run.status === "done" && (
         <div className="save-run">
           {saveStatus === "saved" ? (
@@ -68,20 +89,6 @@ export default function RunPanel({
           )}
           {saveStatus === "error" && saveError && <p className="error">{saveError}</p>}
         </div>
-      )}
-      <div className="chart-container">
-        <RunChart snapshots={run.snapshots} height={chartHeight} />
-      </div>
-      {run.snapshots.length > 0 && (
-        <>
-          <PopulationGrid snapshots={run.snapshots} gridWidth={gridWidth} gridHeight={gridHeight} runId={run.runId} />
-          <ExplanatoryPanel
-            climateEnabled={climateEnabled}
-            climateChangeSpeed={climateChangeSpeed}
-            snapshots={run.snapshots}
-            numAncestors={numAncestors}
-          />
-        </>
       )}
     </div>
   );

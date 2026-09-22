@@ -1,111 +1,80 @@
+/*
+ * Grupo 2 (rediseño visual, propuesta aprobada): tokens de diseño —
+ * "vitrina en la oscuridad". Tema único y fijo (no sigue
+ * prefers-color-scheme): la propuesta diseñó un solo look, no dos, así
+ * que no tiene sentido dejar que el sistema operativo lo revierta a un
+ * tema claro no diseñado.
+ *
+ * Los colores semánticos de los DATOS (degradé rojo→verde del fitness en
+ * PopulationGrid, ámbar de catástrofe, azul/naranja/rojo/verde/violeta de
+ * las líneas de RunChart) NO viven acá — son intencionalmente ajenos a
+ * este sistema de tokens de UI, para que nunca se puedan confundir con
+ * chrome de interfaz (ver justificación de la paleta en la propuesta).
+ */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --color-bg: #0b1512;
+  --color-bg-elevated: #13201c;
+  --color-accent: #2dd4bf;
+  --color-accent-secondary: #a78bfa;
+  --color-text: #eaf2ef;
+  --color-text-secondary: #8fa39c;
+  --color-success: #34d399;
+  --color-warning: #f59e0b;
+  --color-error: #f87171;
+  --color-border: #24352f;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Textura de fondo: mismo gris que "hábitat vacío" en la grilla
+     poblacional (PopulationGrid.tsx, EMPTY_CELL_COLOR) — la misma idea de
+     "vida en una grilla" como contexto ambiental, no un color inventado
+     aparte para decoración. */
+  --grid-texture-line: rgba(42, 42, 42, 0.35);
+  --grid-texture-size: 32px;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  --font-heading: "Fraunces", Georgia, serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+
+  font: 16px/1.6 var(--font-body);
+  color-scheme: dark;
+  color: var(--color-text);
+  background: var(--color-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--color-bg);
+  /*
+   * El elemento visual distintivo (ajustado tras la revisión): una grilla
+   * muy tenue y ESTÁTICA de fondo, en vez de partículas animadas — evoca
+   * "vida en una grilla" sin competir con la grilla poblacional real (que
+   * sí anima organismos en vivo) ni costar nada de rendimiento en mobile
+   * o en el VPS.
+   */
+  background-image:
+    linear-gradient(var(--grid-texture-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-texture-line) 1px, transparent 1px);
+  background-size: var(--grid-texture-size) var(--grid-texture-size);
+  background-attachment: fixed;
 }
 
 h1,
 h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+  font-family: var(--font-heading);
+  color: var(--color-text);
+  margin: 0;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
 p {
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+button {
+  font-family: var(--font-body);
 }
 
 code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  font-family: ui-monospace, Consolas, monospace;
 }

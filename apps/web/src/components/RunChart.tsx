@@ -8,6 +8,18 @@ type TooltipPayloadEntry = NonNullable<TooltipContentProps["payload"]>[number];
 
 const CLIMATE_COLORS = ["#d62728", "#2ca02c", "#9467bd"];
 
+/**
+ * Grupo 2 (rediseño visual): estos SÍ son colores de tema de UI, no de
+ * datos — a diferencia de CLIMATE_COLORS/los strokes de cada `<Line>`
+ * (que identifican una métrica y no deben cambiar), grid/ejes/cursor solo
+ * existen para que el gráfico se lea sobre el nuevo fondo oscuro. Se
+ * hardcodean (no `var(--color-...)`) porque Recharts renderiza a SVG
+ * plano, no hereda custom properties de forma confiable en todos los
+ * casos — mismo criterio que ya usa CLIMATE_COLORS como const acá arriba.
+ */
+const CHART_GRID_COLOR = "#24352f";
+const CHART_AXIS_TEXT_COLOR = "#8fa39c";
+
 const FIXED_METRIC_DESCRIPTIONS: Record<string, string> = {
   averageFitness: "Promedio de crías producidas por organismo — indica qué tan bien se está adaptando la población.",
   geneticDiversity:
@@ -166,7 +178,7 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
           }}
           onMouseLeave={() => setHoveredGeneration(null)}
         >
-          <CartesianGrid strokeDasharray="3 3" />
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />
           {/*
             Ajuste 4 (auditoría de interfaz, ronda 3): el label "Generación"
             como "insideBottom" del eje X y la leyenda de abajo competían
@@ -181,13 +193,28 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             custom) y se renderiza como texto HTML plano debajo del
             gráfico, con margen CSS normal — ver `.chart-x-axis-label`.
           */}
-          <XAxis dataKey="generation" />
-          <YAxis yAxisId="fitness" domain={[0, "auto"]} label={{ value: "Fitness", angle: -90, position: "insideLeft" }} />
+          <XAxis
+            dataKey="generation"
+            tick={{ fill: CHART_AXIS_TEXT_COLOR }}
+            axisLine={{ stroke: CHART_GRID_COLOR }}
+            tickLine={{ stroke: CHART_GRID_COLOR }}
+          />
+          <YAxis
+            yAxisId="fitness"
+            domain={[0, "auto"]}
+            label={{ value: "Fitness", angle: -90, position: "insideLeft", fill: CHART_AXIS_TEXT_COLOR }}
+            tick={{ fill: CHART_AXIS_TEXT_COLOR }}
+            axisLine={{ stroke: CHART_GRID_COLOR }}
+            tickLine={{ stroke: CHART_GRID_COLOR }}
+          />
           <YAxis
             yAxisId="climate"
             orientation="right"
             domain={[0, "auto"]}
-            label={{ value: "Clima", angle: 90, position: "insideRight" }}
+            label={{ value: "Clima", angle: 90, position: "insideRight", fill: CHART_AXIS_TEXT_COLOR }}
+            tick={{ fill: CHART_AXIS_TEXT_COLOR }}
+            axisLine={{ stroke: CHART_GRID_COLOR }}
+            tickLine={{ stroke: CHART_GRID_COLOR }}
           />
           {/*
             Ajuste 1 (auditoría de interfaz post-producción): el tooltip
@@ -206,7 +233,7 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             (`buildHoverPayload`) para reusar `ChartTooltip` sin duplicar
             el markup ni las descripciones.
           */}
-          <Tooltip content={() => null} cursor={{ stroke: "#999", strokeDasharray: "3 3" }} />
+          <Tooltip content={() => null} cursor={{ stroke: CHART_AXIS_TEXT_COLOR, strokeDasharray: "3 3" }} />
           <Legend />
           {/*
             RNF-004 (2ª verificación con persona real, "Cambio 2"): la
