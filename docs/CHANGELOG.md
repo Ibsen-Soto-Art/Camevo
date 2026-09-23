@@ -6,6 +6,29 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.19.0] — Línea de "Población viva" en el gráfico de corrida
+
+**Documentos afectados:** ninguno — populationSize ya existía en
+GenerationSnapshot desde la Fase 2; este cambio solo lo visualiza.
+
+### Added
+- Tercer eje Y en RunChart (derecho, teal #2dd4bf) mostrando el número
+  de organismos vivos generación a generación — "Población viva" en la
+  leyenda.
+- El efecto de los eventos catastróficos (RF-015) ahora es doblemente
+  visible: la línea vertical roja punteada ya existente + la caída abrupta
+  de la curva de población inmediatamente después de cada evento.
+- Tooltip pedagógico: descripción en lenguaje llano conectando RF-015
+  (caída abrupta) con RF-011 (caída gradual por clima), para que el
+  usuario distinga los dos mecanismos.
+
+**Motivo:** cerrar el gap entre lo que el motor ya calculaba
+(populationSize en cada snapshot) y lo que el usuario podía ver — la
+evolución de la población en el tiempo era invisible en la gráfica,
+aunque ya existía en los datos.
+
+---
+
 ## [v0.18.0] — Rediseño visual completo
 
 **Documentos afectados:** ninguno de los docs de requisitos/arquitectura — es una decisión
