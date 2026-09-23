@@ -50,7 +50,8 @@ async function assertNoAxisLabelClipping(chart: Locator) {
 
 async function waitForClimateLines(page: Page) {
   // Fitness + Diversidad + Población + hasta 3 líneas de clima = 6 con las 3 tareas activas.
-  await page.waitForFunction(() => document.querySelectorAll(".recharts-legend-item").length >= 6, { timeout: 15_000 });
+  // Mejora 2: la leyenda ahora es contenido custom (`.chart-legend-item`), no el render default de Recharts.
+  await page.waitForFunction(() => document.querySelectorAll(".chart-legend-item").length >= 6, { timeout: 15_000 });
 }
 
 test("eje Y sin recorte: estado sin corrida (legend mínima)", async ({ page }) => {

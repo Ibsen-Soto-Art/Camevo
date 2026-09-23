@@ -1,16 +1,8 @@
-import { render, screen } from "@testing-library/react";
-import type { TooltipContentProps } from "recharts";
+import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import RunChart, { ChartTooltip, describeMetric, toChartRows } from "../src/components/RunChart";
+import RunChart, { DEFAULT_HIDDEN_KEYS, buildSeriesList, toChartRows } from "../src/components/RunChart";
 import type { GenerationSnapshot } from "../src/lib/camevo-client";
 import { getCatastropheGenerations } from "../src/lib/catastrophe";
-
-/** Completa los campos de contexto de Recharts que ChartTooltip ignora, pero que el tipo TooltipContentProps exige. */
-function renderTooltip(payload: TooltipContentProps["payload"], label: number, active = true) {
-  return render(
-    <ChartTooltip active={active} coordinate={undefined} accessibilityLayer={false} activeIndex={undefined} payload={payload} label={label} />,
-  );
-}
 
 function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
   return {
@@ -29,7 +21,7 @@ function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
   };
 }
 
-describe("toChartRows — incluye populationSize (nueva línea 'Población viva')", () => {
+describe("toChartRows — incluye populationSize (línea 'Población viva')", () => {
   it("copia populationSize de cada snapshot a la fila aplanada, junto al resto de las métricas fijas", () => {
     const snapshots = [
       snapshot({ generation: 0, populationSize: 400, averageFitness: 1, geneticDiversity: 0.1 }),
@@ -53,15 +45,6 @@ describe("toChartRows — incluye populationSize (nueva línea 'Población viva'
   });
 });
 
-describe("describeMetric — descripción pedagógica de populationSize", () => {
-  it("conecta la caída de población con RF-015 (evento catastrófico) y la contrasta con RF-011 (clima gradual)", () => {
-    const description = describeMetric("populationSize");
-    expect(description).toMatch(/organismos vivos/i);
-    expect(description).toMatch(/RF-015/);
-    expect(description).toMatch(/RF-011/);
-  });
-});
-
 describe("getCatastropheGenerations (RF-015)", () => {
   it("devuelve vacío si ningún snapshot tuvo un evento catastrófico", () => {
     const snapshots = [snapshot({ generation: 0 }), snapshot({ generation: 1 }), snapshot({ generation: 2 })];
@@ -81,11 +64,14 @@ describe("getCatastropheGenerations (RF-015)", () => {
 });
 
 describe("<RunChart /> — nota de la leyenda de eventos catastróficos (RF-015)", () => {
-  // La verificación de que Recharts efectivamente DIBUJA la ReferenceLine
-  // es en navegador real (Playwright): jsdom no implementa
-  // getComputedTextLength/getBBox, de las que depende el layout de ejes
-  // de Recharts, así que su SVG nunca termina de montarse acá. Lo que sí
-  // es verificable en jsdom es la nota de texto, que vive fuera del SVG.
+  // La verificación de que Recharts efectivamente DIBUJA el gráfico (línea de
+  // referencia, leyenda, panel de valores en respuesta a hover/tap real) es
+  // en navegador real (Playwright): jsdom no implementa
+  // getComputedTextLength/getBBox/ResizeObserver de los que depende
+  // ResponsiveContainer, así que ni el `<svg>` ni la leyenda custom llegan a
+  // montarse acá — confirmado directamente (un render de prueba con
+  // snapshots reales no encuentra ningún `.chart-legend-item` en el DOM).
+  // Lo único verificable en jsdom es texto que vive fuera de ese árbol.
   it("sin ningún catastropheOccurred, no muestra la nota de eventos catastróficos", () => {
     const snapshots = [snapshot({ generation: 0 }), snapshot({ generation: 1 })];
     const { container } = render(<RunChart snapshots={snapshots} />);
@@ -97,62 +83,36 @@ describe("<RunChart /> — nota de la leyenda de eventos catastróficos (RF-015)
     const { container } = render(<RunChart snapshots={snapshots} />);
     expect(container.textContent).toMatch(/evento catastrófico/i);
   });
+
+  it("estado inicial (sin hover todavía): muestra el placeholder del panel de valores", () => {
+    const snapshots = [snapshot({ generation: 0 })];
+    const { container } = render(<RunChart snapshots={snapshots} />);
+    expect(container.textContent).toMatch(/pasá el mouse sobre el gráfico para ver los valores/i);
+  });
 });
 
 /**
- * Ajuste 3 (auditoría de interfaz post-producción): el tooltip default de
- * Recharts (nombre + valor numérico, sin significado) se reemplazó por
- * `ChartTooltip`. Recharts necesita medición de layout SVG real
- * (getBBox/getComputedTextLength) para activar el tooltip vía hover — no
- * disponible en jsdom (ver el comentario de arriba) — así que se testea
- * `ChartTooltip` directo, con el payload que Recharts le pasaría, en vez
- * de simular el hover sobre el SVG completo.
+ * Mejora 2 (leyenda interactiva): el estado inicial y la lista de series
+ * son lógica pura, exportada exactamente por este motivo — a diferencia
+ * del hover/click real sobre la leyenda (que sí necesita navegador real,
+ * ver test/e2e/chart-hover-and-catastrophe.spec.ts), esto no depende de
+ * ningún layout de Recharts.
  */
-describe("<ChartTooltip /> — descripciones en lenguaje humano (Ajuste 3)", () => {
-  it("no renderiza nada si el tooltip no está activo", () => {
-    const { container } = renderTooltip(
-      [{ dataKey: "averageFitness", name: "Fitness promedio", value: 1.2, graphicalItemId: "a" }],
-      5,
-      false,
-    );
-    expect(container.textContent).toBe("");
+describe("buildSeriesList + DEFAULT_HIDDEN_KEYS (Mejora 2: estado inicial de la leyenda)", () => {
+  it("arma las 3 series fijas (fitness, población, diversidad) más una por cada taskId climático presente", () => {
+    const series = buildSeriesList(["AND", "NOT"]);
+    expect(series.map((s) => s.dataKey)).toEqual(["averageFitness", "populationSize", "geneticDiversity", "AND", "NOT"]);
   });
 
-  it("fitness promedio: describe qué mide, no solo el número", () => {
-    renderTooltip([{ dataKey: "averageFitness", name: "Fitness promedio", value: 1.23, graphicalItemId: "a" }], 5);
-    expect(screen.getByText(/Fitness promedio: 1.23/)).toBeInTheDocument();
-    expect(screen.getByText(/crías producidas por organismo/i)).toBeInTheDocument();
+  it("cada serie climática tiene su propio color, en el mismo orden que climateTaskIds", () => {
+    const series = buildSeriesList(["AND", "NOT", "OR"]);
+    const climateColors = series.filter((s) => s.yAxisId === "climate").map((s) => s.color);
+    expect(new Set(climateColors).size).toBe(3); // tres colores distintos, no repetidos
   });
 
-  it("diversidad genética: describe qué mide, no solo el número", () => {
-    renderTooltip(
-      [{ dataKey: "geneticDiversity", name: "Diversidad genética (aprox.)", value: 0.05, graphicalItemId: "b" }],
-      5,
-    );
-    expect(screen.getByText(/variación en los genomas/i)).toBeInTheDocument();
-  });
-
-  it("población viva: describe qué mide y conecta con RF-015/RF-011, no solo el número", () => {
-    renderTooltip([{ dataKey: "populationSize", name: "Población viva", value: 342, graphicalItemId: "e" }], 5);
-    expect(screen.getByText("Población viva: 342")).toBeInTheDocument();
-    expect(screen.getByText(/organismos vivos/i)).toBeInTheDocument();
-  });
-
-  it("una línea de clima (dataKey dinámico, ej. 'AND'): describe la tarea específica por su id", () => {
-    renderTooltip([{ dataKey: "AND", name: "Clima: AND", value: 4.5, graphicalItemId: "c" }], 5);
-    expect(screen.getByText(/tarea AND/i)).toBeInTheDocument();
-    expect(screen.getByText(/más valiosa para sobrevivir/i)).toBeInTheDocument();
-  });
-
-  it("muestra una descripción por cada línea presente en el payload, no solo la primera", () => {
-    renderTooltip(
-      [
-        { dataKey: "averageFitness", name: "Fitness promedio", value: 1, graphicalItemId: "a" },
-        { dataKey: "NOT", name: "Clima: NOT", value: 2, graphicalItemId: "d" },
-      ],
-      7,
-    );
-    expect(screen.getByText(/crías producidas por organismo/i)).toBeInTheDocument();
-    expect(screen.getByText(/tarea NOT/i)).toBeInTheDocument();
+  it("el estado inicial oculta exactamente clima (AND/NOT/OR) + diversidad genética — Fitness y Población quedan visibles", () => {
+    expect(DEFAULT_HIDDEN_KEYS).toEqual(["AND", "NOT", "OR", "geneticDiversity"]);
+    expect(DEFAULT_HIDDEN_KEYS).not.toContain("averageFitness");
+    expect(DEFAULT_HIDDEN_KEYS).not.toContain("populationSize");
   });
 });
