@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { TooltipContentProps } from "recharts";
 import { describe, expect, it } from "vitest";
-import RunChart, { ChartTooltip } from "../src/components/RunChart";
+import RunChart, { ChartTooltip, describeMetric, toChartRows } from "../src/components/RunChart";
 import type { GenerationSnapshot } from "../src/lib/camevo-client";
 import { getCatastropheGenerations } from "../src/lib/catastrophe";
 
@@ -28,6 +28,39 @@ function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
     ...overrides,
   };
 }
+
+describe("toChartRows — incluye populationSize (nueva línea 'Población viva')", () => {
+  it("copia populationSize de cada snapshot a la fila aplanada, junto al resto de las métricas fijas", () => {
+    const snapshots = [
+      snapshot({ generation: 0, populationSize: 400, averageFitness: 1, geneticDiversity: 0.1 }),
+      snapshot({ generation: 1, populationSize: 42, averageFitness: 1.1, geneticDiversity: 0.12 }),
+    ];
+    const rows = toChartRows(snapshots);
+    expect(rows).toEqual([
+      { generation: 0, averageFitness: 1, geneticDiversity: 0.1, populationSize: 400 },
+      { generation: 1, averageFitness: 1.1, geneticDiversity: 0.12, populationSize: 42 },
+    ]);
+  });
+
+  it("refleja una caída abrupta de población (evento catastrófico) sin promediar ni suavizar el valor", () => {
+    const snapshots = [
+      snapshot({ generation: 9, populationSize: 400, catastropheOccurred: false }),
+      snapshot({ generation: 10, populationSize: 40, catastropheOccurred: true }),
+    ];
+    const rows = toChartRows(snapshots);
+    expect(rows[0]?.populationSize).toBe(400);
+    expect(rows[1]?.populationSize).toBe(40);
+  });
+});
+
+describe("describeMetric — descripción pedagógica de populationSize", () => {
+  it("conecta la caída de población con RF-015 (evento catastrófico) y la contrasta con RF-011 (clima gradual)", () => {
+    const description = describeMetric("populationSize");
+    expect(description).toMatch(/organismos vivos/i);
+    expect(description).toMatch(/RF-015/);
+    expect(description).toMatch(/RF-011/);
+  });
+});
 
 describe("getCatastropheGenerations (RF-015)", () => {
   it("devuelve vacío si ningún snapshot tuvo un evento catastrófico", () => {
@@ -97,6 +130,12 @@ describe("<ChartTooltip /> — descripciones en lenguaje humano (Ajuste 3)", () 
       5,
     );
     expect(screen.getByText(/variación en los genomas/i)).toBeInTheDocument();
+  });
+
+  it("población viva: describe qué mide y conecta con RF-015/RF-011, no solo el número", () => {
+    renderTooltip([{ dataKey: "populationSize", name: "Población viva", value: 342, graphicalItemId: "e" }], 5);
+    expect(screen.getByText("Población viva: 342")).toBeInTheDocument();
+    expect(screen.getByText(/organismos vivos/i)).toBeInTheDocument();
   });
 
   it("una línea de clima (dataKey dinámico, ej. 'AND'): describe la tarea específica por su id", () => {

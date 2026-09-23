@@ -24,10 +24,12 @@ const FIXED_METRIC_DESCRIPTIONS: Record<string, string> = {
   averageFitness: "Promedio de crías producidas por organismo — indica qué tan bien se está adaptando la población.",
   geneticDiversity:
     'Variación en los genomas de la población — alta diversidad significa más "material" disponible para la evolución.',
+  populationSize:
+    "Cantidad de organismos vivos en esta generación — cae de golpe en un evento catastrófico (RF-015), a diferencia de una caída gradual por clima desfavorable (RF-011).",
 };
 
-/** Cualquier dataKey que no sea una de las dos métricas fijas de arriba es un taskId climático (RF-022, dinámico según DEFAULT_TASKS). */
-function describeMetric(dataKey: string): string {
+/** Cualquier dataKey que no sea una de las métricas fijas de arriba es un taskId climático (RF-022, dinámico según DEFAULT_TASKS). */
+export function describeMetric(dataKey: string): string {
   return (
     FIXED_METRIC_DESCRIPTIONS[dataKey] ??
     `Multiplicador de energía para organismos que resuelven la tarea ${dataKey} — cuando sube, esa habilidad es más valiosa para sobrevivir.`
@@ -50,7 +52,8 @@ export function ChartTooltip({ active, payload, label }: TooltipContentProps) {
       {payload.map((entry) => (
         <div key={String(entry.dataKey)} className="chart-tooltip-entry">
           <p className="chart-tooltip-name" style={{ color: entry.color }}>
-            {entry.name}: {typeof entry.value === "number" ? entry.value.toFixed(2) : entry.value}
+            {entry.name}:{" "}
+            {typeof entry.value === "number" ? (Number.isInteger(entry.value) ? entry.value : entry.value.toFixed(2)) : entry.value}
           </p>
           <p className="chart-tooltip-description">{describeMetric(String(entry.dataKey))}</p>
         </div>
@@ -59,13 +62,14 @@ export function ChartTooltip({ active, payload, label }: TooltipContentProps) {
   );
 }
 
-/** Aplana los snapshots a filas {generation, averageFitness, geneticDiversity, [taskId]: multiplier} para Recharts. */
-function toChartRows(snapshots: readonly GenerationSnapshot[]): Record<string, number>[] {
+/** Aplana los snapshots a filas {generation, averageFitness, geneticDiversity, populationSize, [taskId]: multiplier} para Recharts. */
+export function toChartRows(snapshots: readonly GenerationSnapshot[]): Record<string, number>[] {
   return snapshots.map((snapshot) => {
     const row: Record<string, number> = {
       generation: snapshot.generation,
       averageFitness: snapshot.averageFitness,
       geneticDiversity: snapshot.geneticDiversity,
+      populationSize: snapshot.populationSize,
     };
     for (const resource of snapshot.climate) {
       row[resource.taskId] = resource.rewardMultiplier;
@@ -90,6 +94,13 @@ function buildHoverPayload(row: Record<string, number>, climateTaskIds: readonly
       value: row.geneticDiversity,
       color: "#ff7f0e",
       graphicalItemId: "geneticDiversity",
+    },
+    {
+      dataKey: "populationSize",
+      name: "Población viva",
+      value: row.populationSize,
+      color: "#2dd4bf",
+      graphicalItemId: "populationSize",
     },
   ];
   climateTaskIds.forEach((taskId, index) => {
@@ -172,7 +183,7 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
       <ResponsiveContainer width="100%" height={height}>
         <LineChart
           data={chartRows}
-          margin={{ top: 10, right: 30, left: 20, bottom: 0 }}
+          margin={{ top: 10, right: 60, left: 20, bottom: 0 }}
           onMouseMove={(state) => {
             if (state?.activeLabel !== undefined) setHoveredGeneration(Number(state.activeLabel));
           }}
@@ -212,6 +223,25 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             orientation="right"
             domain={[0, "auto"]}
             label={{ value: "Clima", angle: 90, position: "insideRight", fill: CHART_AXIS_TEXT_COLOR }}
+            tick={{ fill: CHART_AXIS_TEXT_COLOR }}
+            axisLine={{ stroke: CHART_GRID_COLOR }}
+            tickLine={{ stroke: CHART_GRID_COLOR }}
+          />
+          {/*
+            Tercer eje (población): NO comparte escala con "Fitness" (~0-3) ni
+            con "Clima" (0-16) — el máximo teórico real es gridWidth*gridHeight
+            (hasta 1600, RNF-008), un orden de magnitud por encima de ambos.
+            Recharts apila un segundo eje "right" hacia afuera del primero
+            automáticamente; `margin.right` se amplió de 30 a 60 para darle
+            espacio a esta segunda columna de ticks sin recortarla (mismo tipo
+            de bug ya cazado con Playwright para el eje izquierdo/derecho
+            originales — ver el comentario grande más arriba).
+          */}
+          <YAxis
+            yAxisId="population"
+            orientation="right"
+            domain={[0, "auto"]}
+            label={{ value: "Población", angle: 90, position: "insideRight", fill: CHART_AXIS_TEXT_COLOR }}
             tick={{ fill: CHART_AXIS_TEXT_COLOR }}
             axisLine={{ stroke: CHART_GRID_COLOR }}
             tickLine={{ stroke: CHART_GRID_COLOR }}
@@ -271,6 +301,15 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             name="Diversidad genética (aprox.)"
             stroke="#ff7f0e"
             strokeDasharray="4 3"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <Line
+            yAxisId="population"
+            type="monotone"
+            dataKey="populationSize"
+            name="Población viva"
+            stroke="#2dd4bf"
             dot={false}
             isAnimationActive={false}
           />

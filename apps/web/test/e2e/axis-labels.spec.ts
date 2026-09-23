@@ -12,45 +12,59 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * problema, para que una futura leyenda más larga (o un chart aún más
  * bajo) no reintroduzca el recorte en silencio.
  */
-async function assertNoTopClipping(chart: Locator) {
+/**
+ * Población (nueva línea, RunChart) agregó un TERCER eje rotado, apilado
+ * hacia afuera del de "Clima" — el mismo riesgo de recorte vertical que ya
+ * afectó a los dos ejes originales, más uno nuevo: recorte HORIZONTAL por
+ * la derecha, ya que este eje vive más lejos del borde del SVG y depende
+ * de que `margin.right` (30 → 60) le haya dejado espacio real. Los tres
+ * labels se verifican siempre, no solo los dos originales — de lo
+ * contrario este test seguiría en verde aunque "Población" se recortara
+ * por completo.
+ */
+async function assertNoAxisLabelClipping(chart: Locator) {
   const svg = chart.locator("> svg.recharts-surface").first();
   await expect(svg).toBeVisible();
   const svgBox = (await svg.boundingBox())!;
 
-  const leftLabel = chart.locator("text", { hasText: "Fitness" });
-  const rightLabel = chart.locator("text", { hasText: "Clima" });
-  await expect(leftLabel).toBeVisible();
-  await expect(rightLabel).toBeVisible();
+  const labels = {
+    Fitness: chart.locator("text", { hasText: "Fitness" }),
+    Clima: chart.locator("text", { hasText: "Clima" }),
+    Población: chart.locator("text", { hasText: "Población" }),
+  };
 
-  const leftBox = (await leftLabel.boundingBox())!;
-  const rightBox = (await rightLabel.boundingBox())!;
+  for (const [name, locator] of Object.entries(labels)) {
+    await expect(locator, `label "${name}" visible`).toBeVisible();
+    const box = (await locator.boundingBox())!;
 
-  // overflow > 0 significa que el label empieza ARRIBA del borde superior
-  // del SVG — el SVG lo recorta ahí (overflow:hidden default). <= 0 (con
-  // margen) es la condición de "no cortado".
-  const leftOverflowTop = svgBox.y - leftBox.y;
-  const rightOverflowTop = svgBox.y - rightBox.y;
+    // overflow > 0 significa que el label empieza ANTES del borde
+    // correspondiente del SVG — el SVG lo recorta ahí (overflow:hidden
+    // default). <= 0 (con margen) es la condición de "no cortado".
+    const overflowTop = svgBox.y - box.y;
+    const overflowRight = box.x + box.width - (svgBox.x + svgBox.width);
 
-  expect(leftOverflowTop, "eje izquierdo cortado arriba").toBeLessThanOrEqual(0);
-  expect(rightOverflowTop, "eje derecho cortado arriba").toBeLessThanOrEqual(0);
+    expect(overflowTop, `label "${name}" cortado arriba`).toBeLessThanOrEqual(0);
+    expect(overflowRight, `label "${name}" cortado a la derecha`).toBeLessThanOrEqual(0);
+  }
 }
 
 async function waitForClimateLines(page: Page) {
-  await page.waitForFunction(() => document.querySelectorAll(".recharts-legend-item").length >= 5, { timeout: 15_000 });
+  // Fitness + Diversidad + Población + hasta 3 líneas de clima = 6 con las 3 tareas activas.
+  await page.waitForFunction(() => document.querySelectorAll(".recharts-legend-item").length >= 6, { timeout: 15_000 });
 }
 
 test("eje Y sin recorte: estado sin corrida (legend mínima)", async ({ page }) => {
   await page.goto("/");
-  await assertNoTopClipping(page.locator(".chart-container .recharts-wrapper").first());
+  await assertNoAxisLabelClipping(page.locator(".chart-container .recharts-wrapper").first());
 });
 
-test("eje Y sin recorte: corrida real en curso (legend completa, 5 líneas)", async ({ page }) => {
+test("eje Y sin recorte: corrida real en curso (legend completa, 6 líneas)", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
   await waitForClimateLines(page);
 
-  await assertNoTopClipping(page.locator(".chart-container .recharts-wrapper").first());
+  await assertNoAxisLabelClipping(page.locator(".chart-container .recharts-wrapper").first());
 });
 
 test("eje Y sin recorte: modo comparación (height=320, el escenario más ajustado)", async ({ page }) => {
@@ -61,6 +75,6 @@ test("eje Y sin recorte: modo comparación (height=320, el escenario más ajusta
   await waitForClimateLines(page);
 
   const charts = page.locator(".chart-container .recharts-wrapper");
-  await assertNoTopClipping(charts.nth(0));
-  await assertNoTopClipping(charts.nth(1));
+  await assertNoAxisLabelClipping(charts.nth(0));
+  await assertNoAxisLabelClipping(charts.nth(1));
 });
