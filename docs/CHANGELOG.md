@@ -6,6 +6,30 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.19.1] — Nota pedagógica de "último organismo vivo"
+
+**Documentos afectados:** ninguno.
+
+### Changed
+- ExplanatoryPanel muestra una nota de advertencia específica cuando
+  populationSize === 1 y la corrida sigue en curso: explica que el
+  organismo sigue replicándose pero cada cría es eliminada antes de
+  establecerse, y que la extinción es inminente no por envejecimiento
+  sino porque el entorno cambia más rápido de lo que una sola línea
+  puede reconstituir una población viable.
+- La nota toma prioridad sobre el mensaje de nearExtinct (poblaciones
+  por debajo del 10%) cuando la población llega exactamente a 1,
+  sin solaparse con el mensaje de extinción real (que aparece cuando
+  status === "done" con extinct === true).
+
+**Motivo:** responder en la propia UI la pregunta natural de cualquier
+visitante que vea una corrida con un solo organismo sobreviviendo
+durante muchas generaciones — sin cambiar el motor de simulación
+(la muerte por envejecimiento no es parte del modelo, por razones
+biológicas documentadas).
+
+---
+
 ## [v0.19.0] — Línea de "Población viva" en el gráfico de corrida
 
 **Documentos afectados:** ninguno — populationSize ya existía en
