@@ -1,6 +1,6 @@
 # CAMEVO — Arquitectura de Software y Stack Tecnológico
 
-**Versión 1.2 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.3 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 ---
 
@@ -124,6 +124,40 @@ Esto mantiene el streaming en vivo liviano y hace que el costo de RF-027 sea pro
 
 > **Nota de reducción de alcance (RF-027, implementación real):** el diseño original de este punto asumía `persistence/repository` como fuente ("o el `orchestrator`, si la corrida aún no se persistió") y una URL con `:generation`, sugiriendo que cualquier generación pasada de cualquier corrida (guardada incluida) sería consultable. Al implementarlo se confirmó que eso no es cierto: el genoma y `tasksSolved` de un organismo **nunca se persisten** — solo `{id, x, y, fitness}` llega a la base (ver la nota de RF-024 más arriba) — así que no hay de dónde reconstruirlos una vez que la generación pasó o la corrida terminó. La implementación real se redujo, a propósito, a **solo la generación actual de una corrida que sigue en vivo en el proceso del servidor** (por eso la URL ya no lleva `:generation`: prometerlo habría sido pedir algo que el servidor no puede cumplir). Un click sobre una corrida guardada (RF-025) o ya finalizada devuelve 404 con un mensaje explícito ("La corrida ya no está activa en el servidor"), no un error genérico — ver `api/live-run-registry.ts` y `docs/04-roadmap-fases.md` para el detalle completo de esta decisión.
 
+### 4.2 Identidad por navegador y guardado intencional (`CHANGELOG.md` v0.17.0)
+
+El flujo de "una generación" (sección 4) describía el guardado como un paso
+opcional dentro del mismo pipeline por generación ("el snapshot se emite por
+`api/ws`... y **opcionalmente** se persiste vía `persistence/repository`").
+Esa opcionalidad ahora tiene una regla explícita, no implícita en el código:
+
+1. El frontend genera un UUID v4 una sola vez (`localStorage`, clave
+   `camevo_browser_id`) y lo manda en cada request REST como header
+   `X-Browser-ID` — nunca en el body, para que no sea un campo que el cliente
+   pueda "escribir" arbitrariamente vía `CreateRunRequest` (`browserId`
+   deliberadamente no existe en `@camevo/shared-types`).
+2. `POST /runs` ya NO escribe en Postgres: crea la corrida como "pending" en
+   `LiveRunRegistry` (memoria, compartido con `api/ws` — ver 4.1) con el
+   `browserId` resuelto del header. Mientras la corrida transmite, cada
+   snapshot se acumula en esa misma entrada en memoria, no en la base.
+3. Al terminar (`done`, extinción, o cierre de socket), la entrada queda
+   "terminada, sin guardar" con un TTL de limpieza — solo se persiste si el
+   usuario hace click en "Guardar esta corrida" (`POST /runs/:id/save`), que
+   recién ahí escribe la corrida y sus snapshots acumulados a
+   `persistence/repository`, asociados al `browserId` del creador.
+4. `GET /runs` filtra por `browser_id`; `GET /runs/:id` devuelve 403 (no 404)
+   si la corrida existe pero pertenece a otro navegador — distinguir "no
+   existe" de "no es tuya" es deliberado, no una fuga de información: ambos
+   casos ya requieren conocer el id exacto (un UUID).
+
+**Aclaración honesta, no solo técnica:** esto no es autenticación. Es
+aislamiento casual entre navegadores — sin login, sin verificación
+criptográfica, trivialmente evitable con las devtools abiertas. Es
+exactamente lo que RF-030/RF-031 piden ahora (ver `02-requisitos.md`): sin
+cuentas, sin email, con la certeza de que borrar el navegador o abrir una
+ventana de incógnito hace que las corridas guardadas antes dejen de ser
+accesibles — comportamiento esperado, no un bug.
+
 ## 5. Decisiones de diseño clave
 
 | Decisión | Alternativa considerada | Por qué se eligió esta opción |
@@ -136,3 +170,4 @@ Esto mantiene el streaming en vivo liviano y hace que el costo de RF-027 sea pro
 | Set de instrucciones simplificado vs. Avida completo | Portar el lenguaje ensamblador completo de Avida | Reduce drásticamente el esfuerzo de implementación del intérprete sin perder la propiedad esencial: que la selección natural emerja genuinamente |
 | PostgreSQL con JSONB | MySQL puro / almacenamiento en archivos planos | Balance entre estructura relacional (metadatos de corridas) y flexibilidad (snapshots de generación) |
 | WebSocket para streaming | Polling HTTP periódico | Menor latencia y menor carga de red para actualizaciones frecuentes (varias generaciones por segundo) |
+| Guardado intencional + identidad anónima por navegador (Grupo 1) | Persistir cada corrida automáticamente al completarse, sin ninguna noción de "de quién es" | Evita llenar Postgres con corridas experimentales que nadie pidió conservar, y da un aislamiento casual entre navegadores sin construir un sistema de cuentas — coherente con un proyecto de portafolio/divulgación sin presupuesto para gestión de usuarios real |

@@ -1,6 +1,6 @@
 # CAMEVO — Especificación de Requisitos
 
-**Versión 1.3 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.5 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` para no funcionales. Prioridad: **M** (Must — MVP), **S** (Should — fase 2/3), **C** (Could — fase 4+).
 
@@ -66,6 +66,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 
 > **Nota de cierre:** RF-024 quedó completo con un componente `PopulationGrid` (canvas, no SVG — hasta 1600 celdas actualizándose por WebSocket harían que SVG reconciliara demasiados nodos DOM por generación). Cada celda ocupada se colorea con un gradiente continuo según el fitness del organismo, normalizado contra el máximo histórico de ESA corrida (no el máximo de cada snapshot individual — decisión deliberada: `fitness` crece con la duración de la corrida, no con qué tan sana está, así que normalizar por snapshot haría ver "saludable" a una población objetivamente débil justo antes de un colapso). Las celdas sin organismo se muestran con un color de fondo distinto — hábitat perdido. El diseño del snapshot liviano (`03-arquitectura.md`, sección 4, punto 5) anticipó exactamente este momento: `OrganismSummary {id, x, y, fitness}` es precisamente lo que este componente necesita, sin haber tenido que agregar ningún campo nuevo al snapshot para la grilla en sí.
 
+> **Nota de cierre:** RF-027 quedó completo (`CHANGELOG.md` v0.16.0) con un endpoint de detalle bajo demanda (`GET /runs/:runId/organisms/:organismId`), no con una vista de organismo separada como sugería la redacción original — un click en una celda de la grilla (RF-024) abre un panel con fitness, tareas resueltas, generación y posición, en lenguaje llano. Alcance reducido respecto al diseño original: solo sirve la generación ACTUAL de una corrida que sigue en vivo en el proceso del servidor, nunca generaciones pasadas ni corridas ya guardadas — el genoma y las tareas resueltas de un organismo nunca se persisten (ver `03-arquitectura.md` §4.1 para el detalle completo de esta decisión, tomada en el mismo commit de implementación).
+
 ### 1.4 Persistencia
 
 | ID | Requisito | Prioridad |
@@ -73,6 +75,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 | RF-030 | El sistema debe permitir guardar la configuración y los resultados (snapshots por generación) de una corrida de simulación. | M |
 | RF-031 | El sistema debe permitir listar y recuperar corridas previas guardadas. | S |
 | RF-032 | El sistema debe permitir exportar los resultados de una corrida (p. ej. JSON o CSV) para análisis externo. | C |
+
+> **Nota de actualización (Grupo 1, `CHANGELOG.md` v0.17.0):** el guardado (RF-030) pasó de automático a **intencional** — una corrida ya no se persiste sola al completarse; recién se guarda si el usuario hace click en "Guardar esta corrida". Listar y recuperar corridas (RF-031) ahora está **aislado por navegador**: cada corrida guardada queda asociada a un identificador anónimo por navegador (`browser_id`, un UUID en `localStorage`, sin login ni cuentas), y `GET /runs`/`GET /runs/:id` nunca devuelven corridas de otro navegador (403 si se intenta acceder por URL directa a una corrida ajena). No es autenticación real — es aislamiento casual entre navegadores, suficiente para el objetivo de privacidad sin cuentas, no una barrera de seguridad contra alguien decidido.
 
 ---
 

@@ -1,6 +1,6 @@
 # CAMEVO — Roadmap por Fases
 
-**Versión 1.6 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.7 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un proyecto de aprendizaje construido de forma incremental. Cada fase tiene entregables verificables antes de avanzar a la siguiente.
 
@@ -143,6 +143,24 @@ El roadmap se organiza en hitos secuenciales, no en fechas fijas, dado que es un
 - Escenarios preconfigurados con narrativa ("¿Qué pasaría si el cambio fuera tan rápido como el observado desde 1980?").
 - Modo comparación guiada (side-by-side) como experiencia principal, no solo como opción avanzada.
 - Exportación de resultados (RF-032) para quien quiera analizar los datos por fuera de la plataforma.
+
+**Estado: ✅ Cerrada.**
+- Entregables cubiertos: tres escenarios preconfigurados con narrativa en lenguaje de
+  divulgación ("¿Puede la vida adaptarse?", "Cambio climático acelerado", "El punto de
+  quiebre"); curva climática histórica real (NASA GISTEMP, 1880-2025) como **opción**
+  alternativa a la curva sintética — no reemplaza el default, a diferencia de lo previsto
+  arriba ("anclar... por defecto"), para no invalidar los números de fitness
+  tardío/temprano ya validados y cerrados en la Fase 3 (`CHANGELOG.md` v0.9.0), medidos
+  contra la curva sintética; cita verificada del IPCC AR6 Grupo de Trabajo II (2022) en el
+  panel de extinción, contrastada contra el PDF de la fuente primaria, no citada de
+  memoria.
+- No implementado, descartado explícitamente: "modo comparación guiada (side-by-side) como
+  experiencia principal" — la comparación ya existía desde RF-025 (Fase 3) como una opción
+  entre tres modos; no se promovió a experiencia principal por defecto. Exportación de
+  resultados (RF-032, prioridad C, no bloqueante — mismo criterio que RF-018 en la Fase 4).
+- Verificación de RNF-004 con una persona real fuera del equipo: el núcleo se cumplió, con
+  tres fricciones de interfaz identificadas y corregidas antes de continuar con cualquier
+  otro trabajo (`CHANGELOG.md` v0.15.1).
 
 ---
 

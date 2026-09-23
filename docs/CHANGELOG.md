@@ -6,6 +6,153 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.18.0] — Rediseño visual completo
+
+**Documentos afectados:** ninguno de los docs de requisitos/arquitectura — es una decisión
+de producto con identidad visual definida y aprobada, no un cambio de alcance funcional.
+
+### Changed
+- Dirección visual completa aprobada e implementada de una sola vez ("vitrina en la
+  oscuridad"): paleta oscura (`#0b1512` fondo, `#13201c` paneles, `#2dd4bf` acento teal,
+  `#a78bfa` acento violeta), tipografía Fraunces (títulos) + IBM Plex Sans (cuerpo/UI), y
+  layout de dos columnas 30/70 en desktop (controles/contenido), apiladas por debajo de
+  900px.
+- Elemento visual distintivo: textura de grilla estática a ~7% de opacidad como fondo de
+  toda la página, con el mismo gris que "hábitat vacío" en la grilla poblacional — evoca
+  "vida en una grilla" sin animar nada ni competir visualmente con la grilla real. Se
+  descartó una alternativa con partículas animadas por ese mismo motivo, además de su
+  costo de rendimiento en mobile y en el VPS.
+- El gráfico de líneas se retematiza para el fondo oscuro (grid, ejes, cursor) sin tocar
+  los colores que identifican cada serie de datos (fitness, diversidad genética, clima).
+- El botón "Guardar esta corrida" se reubica al cierre de la narrativa de cada corrida
+  (después del panel explicativo), en vez de antes del gráfico.
+
+**Motivo:** decisión de identidad visual de producto — propuesta en texto (paleta,
+tipografía, jerarquía, layout) y aprobada explícitamente antes de implementar una sola
+línea de CSS, para que Camevo tuviera personalidad propia en vez de verse como una demo
+técnica sin diseño. Verificado con Playwright en los tres anchos de viewport aprobados
+(375/768/1280px) y los tres modos (corrida única, comparación en vivo, comparación de
+corridas guardadas) contra la API y Postgres reales.
+
+---
+
+## [v0.17.0] — Privacidad y guardado intencional
+
+**Documentos afectados:** `02-requisitos.md` (v1.4 → v1.5 — nota de actualización junto a
+RF-030/RF-031) y `03-arquitectura.md` (v1.2 → v1.3 — nueva sección 4.2, identidad por
+navegador y guardado intencional, más una fila nueva en la tabla de decisiones de diseño)
+
+### Added
+- Identidad anónima por navegador: un UUID v4 generado una sola vez en el frontend y
+  guardado en `localStorage`, enviado en cada request como header `X-Browser-ID` — sin
+  login, sin cuentas, sin email. Si se borra el localStorage/las cookies, el acceso a las
+  corridas guardadas con ese id desaparece con él: comportamiento esperado, no un bug.
+- Guardado intencional (Cambio 1B): una corrida deja de persistirse automáticamente en
+  Postgres al completarse — mientras transmite en vivo, solo se acumula en
+  `LiveRunRegistry` (memoria). Recién se persiste si el usuario hace click en "Guardar
+  esta corrida", vía el nuevo endpoint `POST /runs/:id/save`.
+- Aislamiento por navegador: `GET /runs` filtra por `browser_id`, y `GET /runs/:id`
+  devuelve 403 (no 404) si la corrida existe pero pertenece a otro navegador.
+- Columna `browser_id TEXT NOT NULL` con índice en la tabla `runs` de producción —
+  agregada de forma segura porque la tabla se vació explícitamente antes de la migración.
+- Nota visible en el selector de corridas guardadas (RF-025) explicando que son propias de
+  ese navegador/perfil, y que se pierden al borrar caché o usar modo incógnito.
+
+**Motivo:** llevar la privacidad a un diseño explícito antes del rediseño visual, tal como
+pidió el autor — sin sistema de cuentas, aislamiento casual entre navegadores (no
+autenticación real), y sin que cada corrida experimental quede persistida en la base antes
+de que el usuario decida que vale la pena guardarla.
+
+---
+
+## [v0.16.0] — RF-027 completo: click-to-inspect en grilla poblacional
+
+**Documentos afectados:** `02-requisitos.md` (v1.3 → v1.4 — nota de cierre junto a RF-027) y
+`03-arquitectura.md` (v1.1 → v1.2 — nota de reducción de alcance en §4.1, URL corregida de
+`:generation` a sin ese parámetro; ya hecho en el mismo commit de implementación, `3593ff8`,
+sin changelog propio hasta ahora)
+
+### Changed
+- RF-027 completado: click en una celda ocupada de la grilla poblacional abre un panel con
+  el detalle del organismo (crías producidas, tareas lógicas resueltas, generación,
+  posición), en lenguaje llano — vía el nuevo endpoint `GET
+  /runs/:runId/organisms/:organismId`.
+- `LiveRunRegistry` (`api/live-run-registry.ts`): nuevo estado en memoria compartido entre
+  `api/ws` (dueño del `SimulationState` mientras la corrida transmite) y `api/rest` (que lo
+  lee bajo demanda), inyectado una sola vez desde `api/server.ts` para no crear una
+  dependencia circular entre ambos módulos.
+- Alcance reducido respecto al diseño original documentado: solo sirve la generación
+  ACTUAL de una corrida que sigue en vivo en el mismo proceso — nunca generaciones pasadas
+  ni corridas ya guardadas, porque el genoma y las tareas resueltas de un organismo nunca
+  se persisten (solo `{id,x,y,fitness}` llega a la base). La URL ya no lleva
+  `:generation` como sugería el diseño original, para no prometer algo que el servidor no
+  puede cumplir.
+- Dos casos de 404 distintos, cada uno con su propio mensaje en español: la corrida entera
+  puede no estar activa (terminada, o el servidor se reinició), o la corrida sigue activa
+  pero ese organismo puntual ya no existe (murió o fue reemplazado).
+
+**Motivo:** RF-027 ("vista de organismo individual") estaba declarado en requisitos desde
+v0.4.0 pero nunca se había implementado — se completa acá, con el alcance real ajustado a
+lo que el modelo de datos existente puede sostener.
+
+---
+
+## [v0.15.1] — Ajustes de UX, visibilidad y onboarding (correcciones post-verificación de RNF-004)
+
+**Documentos afectados:** ninguno.
+
+### Changed
+- Tooltip de la gráfica movido a un panel externo fijo debajo del gráfico — ya no tapa las
+  líneas al pasar el mouse.
+- Evento catastrófico marcado con un overlay ámbar (`#f59e0b`) semi-transparente sobre toda
+  la grilla, en vez de un borde rojo perimetral — diferenciado a propósito del rojo que ya
+  usa la escala de fitness bajo.
+- Espaciado vertical del gráfico corregido: la etiqueta "Generación" se movió fuera del
+  `<svg>` (texto HTML plano con margen normal), porque competía con la leyenda por un
+  presupuesto de espacio interno fijo de Recharts.
+- Hero section nuevo: tres líneas cortas en lenguaje llano (qué es / para qué sirve / cómo
+  empezar), pensadas para caber sin scroll en mobile, antes de cualquier control técnico.
+- La narrativa de cada escenario preconfigurado ahora avisa explícitamente, antes de
+  iniciar la corrida, qué eventos catastróficos vas a ver y dónde buscarlos.
+- Definición mínima de "fitness" agregada directamente en la leyenda de la grilla
+  poblacional ("pocas crías" / "muchas crías"), donde el usuario ya está mirando el color.
+- El formulario de configuración queda colapsado por defecto apenas se elige un escenario
+  preconfigurado, en vez de quedar siempre abierto.
+
+**Motivo:** la verificación de RNF-004 con una persona real fuera del equipo (mencionada en
+el cierre de la Fase 6, v0.15.0) encontró fricciones concretas de interfaz — corregidas acá
+en dos rondas sucesivas de ajuste, antes de continuar con cualquier otro trabajo.
+
+---
+
+## [v0.15.0] — Cierre de Fase 6: capa educativa
+
+**Documentos afectados:** `04-roadmap-fases.md` (v1.6 → v1.7 — nota de cierre de Fase 6)
+
+### Added
+- Tres escenarios preconfigurados con narrativa en lenguaje de divulgación ("¿Puede la vida
+  adaptarse?", "Cambio climático acelerado", "El punto de quiebre"), cada uno autocompletando
+  velocidad climática y modo de repetibilidad sobre el mismo formulario ya validado en fases
+  anteriores.
+- Opción de curva climática basada en datos reales de temperatura global histórica (NASA
+  GISTEMP, 1880-2025) como alternativa a la curva sintética paramétrica.
+- Cita verificada del IPCC AR6 Grupo de Trabajo II (2022) en el panel de extinción: riesgo
+  MUY ALTO de extinción — 3-14% de las especies evaluadas a 1.5°C de calentamiento, 3-18% a
+  2°C — verificada contra el PDF de la fuente primaria, no citada de memoria.
+
+### Changed
+- Verificación de RNF-004 (una persona sin conocimientos previos entiende el propósito del
+  simulador en los primeros minutos) con una persona real fuera del equipo: el núcleo se
+  cumplió, con tres fricciones de interfaz identificadas — corregidas en la entrada
+  siguiente (v0.15.1).
+
+**Motivo:** cierre de la Fase 6 del roadmap — una capa de divulgación/educación agregada
+sobre un motor y un módulo climático ya estables y cerrados en fases anteriores, pensada
+para que el proyecto comunique su propósito a alguien sin trasfondo técnico, no solo a
+quien ya entiende qué es un algoritmo evolutivo.
+
+---
+
 ## [v0.14.0] — Cierre del cabo suelto de la Fase 5: prueba de carga real y decisión sobre Rust/WASM
 
 **Documentos afectados:** `04-roadmap-fases.md` (v1.5 → v1.6 — nueva sección "Cierre del
