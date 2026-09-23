@@ -63,6 +63,7 @@ export default function RunPanel({
             climateChangeSpeed={climateChangeSpeed}
             snapshots={run.snapshots}
             numAncestors={numAncestors}
+            isRunning={run.status === "running"}
           />
         </>
       )}

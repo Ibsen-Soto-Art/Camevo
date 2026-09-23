@@ -46,9 +46,11 @@ export interface ExplanatoryPanelProps {
   readonly snapshots: readonly GenerationSnapshot[];
   /** El numAncestors SOLICITADO (antes de que el servidor aplique el mínimo de 2 con clima activo) — ver más abajo. */
   readonly numAncestors: number;
+  /** Distingue "todavía corriendo" de "terminó sin extinción" — a diferencia de `extinct`/`nearExtinct`, esto no queda registrado en ningún snapshot. Solo importa para la nota de "último organismo vivo" de abajo. */
+  readonly isRunning: boolean;
 }
 
-export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, snapshots, numAncestors }: ExplanatoryPanelProps) {
+export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, snapshots, numAncestors, isRunning }: ExplanatoryPanelProps) {
   const lineageCount = effectiveLineageCount(numAncestors, climateEnabled);
   const { ratio, hasEnoughData } = useMemo(() => {
     const quarter = Math.floor(snapshots.length / 4);
@@ -112,6 +114,26 @@ export default function ExplanatoryPanel({ climateEnabled, climateChangeSpeed, s
             Fuente: IPCC, Sexto Informe de Evaluación (AR6), Grupo de Trabajo II, Resumen para Responsables de
             Políticas (2022), sección B.4.1, p. 14.
           </em>
+        </p>
+      </div>
+    );
+  }
+
+  // Último organismo vivo, corrida todavía en curso: un caso puntual dentro
+  // de nearExtinct (populationSize=1 siempre está bajo cualquier umbral
+  // razonable), pero con un mensaje específico — "queda exactamente uno" es
+  // una situación distinta de "la población está baja pero hay varios
+  // compitiendo". No aplica una vez que la corrida ya terminó (`!isRunning`):
+  // si terminó en extinción, el bloque de arriba ya cubre ese desenlace; si
+  // terminó sin extinción, populationSize=1 en el último snapshot no es un
+  // estado "en curso" sobre el que tenga sentido advertir.
+  if (last?.populationSize === 1 && isRunning) {
+    return (
+      <div className="explanatory-panel">
+        <p>
+          ⚠️ Solo queda 1 organismo vivo. Sigue replicándose, pero cada cría es eliminada antes de poder establecerse.
+          La extinción es inminente — no porque el organismo envejezca, sino porque el entorno cambia más rápido de
+          lo que una sola línea puede reconstituir una población viable.
         </p>
       </div>
     );
