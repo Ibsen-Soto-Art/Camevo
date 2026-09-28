@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getCatastropheGenerations } from "../lib/catastrophe";
+import { downsampleSnapshots } from "../lib/downsample";
 import type { GenerationSnapshot } from "../lib/camevo-client";
 
 /**
@@ -119,13 +120,35 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
     return [...ids];
   }, [snapshots]);
 
-  const chartRows = useMemo(() => toChartRows(snapshots), [snapshots]);
+  /*
+   * Submuestreo adaptativo antes de que los datos lleguen a Recharts: una
+   * corrida completa son 1500 generaciones (`DEFAULT_BASE_FORM.updates`) y
+   * dibujar las 1500 cuesta, medido en navegador real sobre una corrida
+   * guardada, ~208ms de tareas largas del hilo principal. Por debajo de
+   * `DOWNSAMPLE_TARGET` la función devuelve el mismo array sin tocarlo, así
+   * que las corridas cortas no pierden ni un punto.
+   *
+   * Va acá adentro y no en RunPanel/useRun a propósito: `PopulationGrid` y
+   * `ExplanatoryPanel` reciben los MISMOS `run.snapshots` y necesitan todos
+   * — `historicalMaxFitness` recorre cada organismo de cada snapshot para
+   * normalizar el color de las celdas, así que submuestrear aguas arriba le
+   * cambiaría en silencio la escala de color a la grilla.
+   */
+  const sampledSnapshots = useMemo(() => downsampleSnapshots(snapshots), [snapshots]);
+  const chartRows = useMemo(() => toChartRows(sampledSnapshots), [sampledSnapshots]);
   const seriesList = useMemo(() => buildSeriesList(climateTaskIds), [climateTaskIds]);
 
   // En la práctica son pocas por corrida: Fase 4 midió extinción real entre
   // las generaciones 21 y 131 con severity=0.9/interval=10, así que no es
   // una cantidad de líneas que vaya a saturar el gráfico.
-  const catastropheGenerations = useMemo(() => getCatastropheGenerations(snapshots), [snapshots]);
+  //
+  // Se deriva de `sampledSnapshots`, no de `snapshots`: el eje X es
+  // CATEGÓRICO (`dataKey="generation"` sin `type="number"`), así que una
+  // `<ReferenceLine x={...}>` sobre una generación que no quedó en
+  // `chartRows` no tendría categoría donde posicionarse. `downsampleSnapshots`
+  // garantiza que ninguna se pierda — leer de la misma lista que el gráfico
+  // hace que esa garantía no pueda desincronizarse en silencio.
+  const catastropheGenerations = useMemo(() => getCatastropheGenerations(sampledSnapshots), [sampledSnapshots]);
 
   // Mejora 1 (panel de valores fijo, no un tooltip flotante): a
   // diferencia del tooltip default de Recharts, ya NO hay `onMouseLeave`
