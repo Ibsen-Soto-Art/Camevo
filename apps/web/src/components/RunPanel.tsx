@@ -57,7 +57,20 @@ export default function RunPanel({
       </div>
       {run.snapshots.length > 0 && (
         <>
-          <PopulationGrid snapshots={run.snapshots} gridWidth={gridWidth} gridHeight={gridHeight} runId={run.runId} />
+          {/*
+            "running" y "paused" son los dos estados en los que la corrida
+            sigue abierta en el LiveRunRegistry del servidor. "done" cubre
+            tanto una corrida recién terminada como una guardada que se
+            cargó con useHistoricalRun (que entrega status="done"), y en
+            ninguno de los dos el endpoint de organismos responde.
+          */}
+          <PopulationGrid
+            snapshots={run.snapshots}
+            gridWidth={gridWidth}
+            gridHeight={gridHeight}
+            runId={run.runId}
+            inspectable={run.status === "running" || run.status === "paused"}
+          />
           <ExplanatoryPanel
             climateEnabled={climateEnabled}
             climateChangeSpeed={climateChangeSpeed}

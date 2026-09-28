@@ -67,7 +67,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
   });
 
   it("no renderiza nada si todavía no hay ningún snapshot", () => {
-    const { container } = render(<PopulationGrid snapshots={[]} gridWidth={5} gridHeight={5} runId="test-run" />);
+    const { container } = render(<PopulationGrid snapshots={[]} gridWidth={5} gridHeight={5} runId="test-run" inspectable />);
     expect(container.querySelector("canvas")).toBeNull();
   });
 
@@ -80,7 +80,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       ],
     });
 
-    render(<PopulationGrid snapshots={[snap]} gridWidth={3} gridHeight={2} runId="test-run" />);
+    render(<PopulationGrid snapshots={[snap]} gridWidth={3} gridHeight={2} runId="test-run" inspectable />);
 
     // 1 fillRect para el fondo completo (todo "vacío" primero) + 1 por organismo vivo.
     expect(fills.length).toBe(1 + 2);
@@ -99,7 +99,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
     const render1 = mockCanvasContext();
     // Snapshot temprano: el mejor organismo de la corrida hasta ahora tiene fitness 10.
     const early = snapshot({ generation: 0, organisms: [{ id: "a", x: 0, y: 0, fitness: 10 }] });
-    render(<PopulationGrid snapshots={[early]} gridWidth={1} gridHeight={1} runId="test-run" />);
+    render(<PopulationGrid snapshots={[early]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
     const earlyColor = render1.fills.at(-1)?.color;
 
     const render2 = mockCanvasContext();
@@ -111,7 +111,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
     // máximo histórico, el segundo debe verse más apagado.
     const peak = snapshot({ generation: 1, organisms: [{ id: "b", x: 0, y: 0, fitness: 100 }] });
     const later = snapshot({ generation: 2, organisms: [{ id: "a", x: 0, y: 0, fitness: 10 }] });
-    render(<PopulationGrid snapshots={[early, peak, later]} gridWidth={1} gridHeight={1} runId="test-run" />);
+    render(<PopulationGrid snapshots={[early, peak, later]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
     const laterColor = render2.fills.at(-1)?.color;
 
     expect(laterColor).not.toBe(earlyColor);
@@ -120,7 +120,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
   it("un organismo con el fitness histórico máximo se pinta con el color más saludable (verde)", () => {
     const { fills } = mockCanvasContext();
     const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 10 }] });
-    render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" />);
+    render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
     const organismColor = fills.at(-1)?.color ?? "";
     expect(organismColor).toContain("hsl(120"); // hue=120 = verde puro, extremo saludable de la escala
@@ -134,7 +134,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
     it("sin catastropheOccurred, no pinta el overlay ni muestra el texto del evento", () => {
       const { fills } = mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
-      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
       // fondo + 1 organismo, nada más — ningún fillRect extra de overlay.
       expect(fills).toHaveLength(2);
@@ -145,7 +145,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const { fills } = mockCanvasContext();
       const before = snapshot({ generation: 0, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
-      render(<PopulationGrid snapshots={[before, event]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      render(<PopulationGrid snapshots={[before, event]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
       // fondo + 1 organismo + el overlay del evento (el último fillRect).
       expect(fills).toHaveLength(3);
@@ -165,10 +165,10 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
       const after = snapshot({ generation: 2, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
 
-      const { rerender } = render(<PopulationGrid snapshots={[event]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      const { rerender } = render(<PopulationGrid snapshots={[event]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
       expect(screen.getByText(/Evento catastrófico — gen 1/)).toBeInTheDocument();
 
-      rerender(<PopulationGrid snapshots={[event, after]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      rerender(<PopulationGrid snapshots={[event, after]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
       expect(screen.getByText(/Evento catastrófico — gen 1/)).toBeInTheDocument(); // "after" está dentro de la ventana de persistencia
     });
 
@@ -177,7 +177,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const event = snapshot({ generation: 1, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
       const farAfter = snapshot({ generation: 50, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
 
-      render(<PopulationGrid snapshots={[event, farAfter]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      render(<PopulationGrid snapshots={[event, farAfter]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
       expect(screen.queryByText(/Evento catastrófico — gen/)).not.toBeInTheDocument(); // generación 50 está muy lejos del evento en generación 1
     });
 
@@ -187,10 +187,10 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const farAfterFirst = snapshot({ generation: 20, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       const secondEvent = snapshot({ generation: 21, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }], catastropheOccurred: true });
 
-      const { rerender } = render(<PopulationGrid snapshots={[firstEvent, farAfterFirst]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      const { rerender } = render(<PopulationGrid snapshots={[firstEvent, farAfterFirst]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
       expect(screen.queryByText(/Evento catastrófico — gen/)).not.toBeInTheDocument(); // ya pasó la ventana del primer evento
 
-      rerender(<PopulationGrid snapshots={[firstEvent, farAfterFirst, secondEvent]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      rerender(<PopulationGrid snapshots={[firstEvent, farAfterFirst, secondEvent]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
       expect(screen.getByText(/Evento catastrófico — gen 21/)).toBeInTheDocument(); // el segundo evento reabre la ventana, con SU generación
     });
   });
@@ -199,7 +199,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
     it("muestra las tres referencias: gradiente de fitness, hábitat vacío y evento catastrófico", () => {
       mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
       const legend = within(container.querySelector(".population-grid-legend") as HTMLElement);
 
       expect(legend.getByText(/Fitness bajo/)).toBeInTheDocument();
@@ -211,7 +211,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
     it("RNF-004 (re-auditoría): 'fitness' se define en lenguaje llano la primera vez que aparece en el flujo visual", () => {
       mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
-      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
       expect(screen.getByText("Fitness bajo (pocas crías)")).toBeInTheDocument();
       expect(screen.getByText("Fitness alto (muchas crías)")).toBeInTheDocument();
@@ -220,7 +220,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
     it("la barra de gradiente va de rojo (fitness bajo) a verde (fitness alto), igual que las celdas reales", () => {
       mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
       const bar = container.querySelector(".grid-legend-bar") as HTMLElement;
       expect(bar.style.background).toContain("hsl(0, 70%, 45%)"); // mismo fitnessColor(0) que pinta las celdas
@@ -230,7 +230,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
     it("Ajuste 5: la etiqueta 'Fitness alto' usa el mismo azul (#1f77b4) que la línea de fitness de RunChart — puente visual entre ambas leyendas", () => {
       mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
-      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" />);
+      render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
       expect(screen.getByText(/Fitness alto/)).toHaveClass("grid-legend-label-fitness-high");
     });
@@ -245,7 +245,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
 
       // Grilla 2x1: un organismo en (0,0), la celda (1,0) queda vacía.
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={2} gridHeight={1} runId="run-1" />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={2} gridHeight={1} runId="run-1" inspectable />);
 
       const canvas = container.querySelector("canvas") as HTMLCanvasElement;
       fireEvent.click(canvas, { clientX: 300, clientY: 200 }); // mitad derecha → celda (1,0), vacía
@@ -266,7 +266,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       );
 
       const snap = snapshot({ organisms: [{ id: "org-a", x: 0, y: 0, fitness: 4 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" inspectable />);
 
       const canvas = container.querySelector("canvas") as HTMLCanvasElement;
       fireEvent.click(canvas, { clientX: 200, clientY: 200 });
@@ -288,7 +288,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       );
 
       const snap = snapshot({ organisms: [{ id: "org-a", x: 0, y: 0, fitness: 0 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" inspectable />);
       fireEvent.click(container.querySelector("canvas") as HTMLCanvasElement, { clientX: 200, clientY: 200 });
 
       await waitFor(() => expect(screen.getByText(/Todavía no resuelve ninguna tarea lógica/)).toBeInTheDocument());
@@ -303,7 +303,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       );
 
       const snap = snapshot({ organisms: [{ id: "org-a", x: 0, y: 0, fitness: 1 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" inspectable />);
       fireEvent.click(container.querySelector("canvas") as HTMLCanvasElement, { clientX: 200, clientY: 200 });
 
       await waitFor(() => expect(screen.getByText("La corrida ya no está activa en el servidor")).toBeInTheDocument());
@@ -322,7 +322,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
       );
 
       const snap = snapshot({ organisms: [{ id: "org-a", x: 0, y: 0, fitness: 1 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" inspectable />);
       fireEvent.click(container.querySelector("canvas") as HTMLCanvasElement, { clientX: 200, clientY: 200 });
 
       await waitFor(() =>
@@ -339,11 +339,79 @@ describe("<PopulationGrid /> (RF-024)", () => {
       vi.stubGlobal("fetch", fetchMock);
 
       const snap = snapshot({ organisms: [{ id: "org-a", x: 0, y: 0, fitness: 1 }] });
-      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId={null} />);
+      const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId={null} inspectable />);
       fireEvent.click(container.querySelector("canvas") as HTMLCanvasElement, { clientX: 200, clientY: 200 });
 
       expect(screen.getByText(/No se puede inspeccionar/i)).toBeInTheDocument();
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+  /**
+   * El cursor real (`cursor: pointer` vs `default`) vive en App.css, que
+   * jsdom no carga — acá se verifica la CLASE que lo selecciona, que es
+   * lo que el componente decide. La regla CSS en sí, con su orden de
+   * origen, es trivial y estática; lo que puede romperse en silencio es
+   * el predicado que elige la clase.
+   */
+  describe("inspectable: la grilla no invita al click cuando el servidor ya no puede responder", () => {
+    const INERT_TEXT = "La inspección de organismos solo está disponible durante una corrida en vivo.";
+    const INVITE_TEXT = "Hacé click en una celda para ver el detalle de ese organismo.";
+
+    function renderGrid(inspectable: boolean) {
+      mockCanvasContext();
+      mockCanvasRect();
+      const snap = snapshot({ organisms: [{ id: "org-a", x: 0, y: 0, fitness: 1 }] });
+      return render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" inspectable={inspectable} />);
+    }
+
+    it("corrida activa (running o paused): cursor de click y la frase que invita a clickear", () => {
+      const { container } = renderGrid(true);
+      const canvas = container.querySelector("canvas")!;
+
+      expect(canvas.className).toContain("population-grid-canvas");
+      expect(canvas.className).not.toContain("population-grid-canvas-inert");
+      expect(canvas).not.toHaveAttribute("title");
+      expect(container.querySelector(".population-grid-hint")).toHaveTextContent(INVITE_TEXT);
+      expect(container.textContent).not.toContain(INERT_TEXT);
+    });
+
+    it("corrida terminada o guardada (done/error): cursor normal, title explicativo y la frase reemplazada", () => {
+      const { container } = renderGrid(false);
+      const canvas = container.querySelector("canvas")!;
+
+      expect(canvas.className).toContain("population-grid-canvas-inert");
+      expect(canvas).toHaveAttribute("title", INERT_TEXT);
+      expect(container.querySelector(".population-grid-hint")).toHaveTextContent(INERT_TEXT);
+      expect(container.textContent).not.toContain(INVITE_TEXT);
+    });
+
+    it("la frase se REEMPLAZA, no se oculta: el bloque sigue existiendo en los dos estados", () => {
+      // Si desapareciera, el layout saltaría al terminar la corrida.
+      expect(renderGrid(true).container.querySelectorAll(".population-grid-hint")).toHaveLength(1);
+      expect(renderGrid(false).container.querySelectorAll(".population-grid-hint")).toHaveLength(1);
+    });
+
+    it("con la corrida no activa el click SIGUE consultando: el usuario recibe el motivo del servidor, no silencio", async () => {
+      // Deliberado: la grilla deja de invitar, pero no se convierte en un
+      // elemento muerto. Es el comportamiento que ya fija el e2e de
+      // RF-027 para una corrida terminada.
+      mockCanvasContext();
+      mockCanvasRect();
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ error: "La corrida ya no está activa en el servidor" }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const snap = snapshot({ organisms: [{ id: "org-a", x: 0, y: 0, fitness: 1 }] });
+      const { container } = render(
+        <PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="run-1" inspectable={false} />,
+      );
+      fireEvent.click(container.querySelector("canvas") as HTMLCanvasElement, { clientX: 200, clientY: 200 });
+
+      await waitFor(() => expect(screen.getByText("La corrida ya no está activa en el servidor")).toBeInTheDocument());
+      expect(fetchMock).toHaveBeenCalled();
     });
   });
 });

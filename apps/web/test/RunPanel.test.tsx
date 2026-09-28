@@ -231,3 +231,71 @@ describe("<RunPanel /> — botón 'Guardar esta corrida' (Grupo 1)", () => {
     expect(screen.queryByRole("button", { name: "Guardada ✓" })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * El predicado que decide si la grilla invita al click vive acá, en
+ * RunPanel — PopulationGrid solo recibe el booleano ya resuelto. Estos
+ * tests recorren los cuatro estados reales de RunStatus que pueden
+ * llegar con snapshots, porque un predicado mal escrito (p. ej.
+ * `status === "running"` a secas, que apagaría la inspección al pausar)
+ * no lo atraparía ningún test sobre PopulationGrid.
+ */
+describe("<RunPanel /> — click-to-inspect solo mientras la corrida sigue abierta en el servidor", () => {
+  const INERT_TEXT = "La inspección de organismos solo está disponible durante una corrida en vivo.";
+  const INVITE_TEXT = "Hacé click en una celda para ver el detalle de ese organismo.";
+
+  function renderWithStatus(status: RunStatus) {
+    return render(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={{ ...historicalRunHandle([snapshot({ generation: 0 })]), status }}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+      />,
+    );
+  }
+
+  it.each<RunStatus>(["running", "paused"])(
+    "status '%s': la corrida sigue viva en el LiveRunRegistry, así que la grilla invita al click",
+    (status) => {
+      const { container } = renderWithStatus(status);
+      expect(container.querySelector(".population-grid-hint")).toHaveTextContent(INVITE_TEXT);
+      expect(container.querySelector("canvas")?.className).not.toContain("population-grid-canvas-inert");
+    },
+  );
+
+  it.each<RunStatus>(["done", "error"])(
+    "status '%s': el registro ya cerró esa corrida, así que la grilla deja de invitar",
+    (status) => {
+      const { container } = renderWithStatus(status);
+      expect(container.querySelector(".population-grid-hint")).toHaveTextContent(INERT_TEXT);
+      expect(container.querySelector("canvas")?.className).toContain("population-grid-canvas-inert");
+    },
+  );
+
+  it("una corrida extinta (done + extinct) tampoco invita al click", () => {
+    const { container } = render(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="fast"
+        run={historicalRunHandle([snapshot({ generation: 4, populationSize: 0, extinct: true })])}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+      />,
+    );
+    expect(container.querySelector(".population-grid-hint")).toHaveTextContent(INERT_TEXT);
+  });
+
+  it("pausar NO apaga la inspección: es la diferencia concreta entre el predicado correcto y `status === \"running\"` a secas", () => {
+    const { container: running } = renderWithStatus("running");
+    const { container: paused } = renderWithStatus("paused");
+    expect(paused.querySelector(".population-grid-hint")?.textContent).toBe(
+      running.querySelector(".population-grid-hint")?.textContent,
+    );
+  });
+});

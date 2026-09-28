@@ -28,6 +28,8 @@ const CATASTROPHE_OVERLAY_FILL = "rgba(245, 158, 11, 0.35)";
  * como dos eventos distintos).
  */
 const CATASTROPHE_FLASH_HOLD_GENERATIONS = 8;
+/** Mismo texto en la frase bajo la grilla y en el `title` del canvas — una sola fuente, no dos que puedan divergir. */
+const INSPECT_UNAVAILABLE_HINT = "La inspección de organismos solo está disponible durante una corrida en vivo.";
 
 export interface PopulationGridProps {
   readonly snapshots: readonly GenerationSnapshot[];
@@ -35,6 +37,22 @@ export interface PopulationGridProps {
   readonly gridHeight: number;
   /** RF-027: necesario para pedir el detalle de un organismo al servidor — null antes de que exista una corrida. */
   readonly runId: string | null;
+  /**
+   * RF-027: si el servidor todavía puede responder por los organismos de
+   * esta corrida. Solo es cierto mientras la corrida sigue ABIERTA en el
+   * `LiveRunRegistry` — o sea `status === "running"` o `"paused"`: una
+   * corrida pausada no está terminada (`markFinished` corre en el
+   * `finally` de `streamRunLive`, no al pausar), así que el endpoint le
+   * sigue respondiendo y sería un error desactivar la inspección ahí,
+   * que es justo cuando alguien quiere mirar las celdas con calma.
+   *
+   * Requerida a propósito, no opcional con default: con un default,
+   * cualquier call-site nuevo que se la olvide desactivaría (o
+   * habilitaría) la inspección en silencio, sin error de compilación ni
+   * nada visible. Siendo requerida, cada lugar que monte esta grilla
+   * tiene que declarar explícitamente en qué estado está su corrida.
+   */
+  readonly inspectable: boolean;
 }
 
 /**
@@ -99,7 +117,7 @@ const GRADIENT_CSS = [0, 0.25, 0.5, 0.75, 1].map((t) => fitnessColor(t)).join(",
  * antes, un canvas de 400x400 píxeles físicos mostrado a 400 CSS px se
  * veía correcto en pantallas 1x pero ligeramente suave en 2x/3x.
  */
-export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId }: PopulationGridProps) {
+export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId, inspectable }: PopulationGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [displaySize, setDisplaySize] = useState(DEFAULT_DISPLAY_SIZE);
@@ -255,18 +273,37 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId
   return (
     <div className="population-grid" ref={containerRef}>
       <div className="population-grid-canvas-wrap">
+        {/*
+          Cuando la corrida ya no está activa (guardada, o simplemente
+          terminada), la grilla deja de INVITAR al click: cursor normal y
+          un `title` que explica por qué. El handler sigue conectado a
+          propósito — quien clickee igual recibe el mensaje concreto del
+          servidor en vez de nada, que es el comportamiento que ya fija
+          test/e2e/organism-inspect.spec.ts.
+        */}
         <canvas
           ref={canvasRef}
           role="img"
           aria-label="Grilla poblacional"
-          className="population-grid-canvas"
+          className={inspectable ? "population-grid-canvas" : "population-grid-canvas population-grid-canvas-inert"}
+          title={inspectable ? undefined : INSPECT_UNAVAILABLE_HINT}
           onClick={handleCellClick}
         />
         {showCatastropheOverlay && (
           <div className="catastrophe-event-banner">⚡ Evento catastrófico — gen {lastCatastropheGeneration}</div>
         )}
       </div>
-      <p className="population-grid-hint">Hacé click en una celda para ver el detalle de ese organismo.</p>
+      {/*
+        La frase es la invitación MÁS fuerte de esta pantalla — más que el
+        cursor, porque se lee. Dejarla fija mientras el cursor cambia
+        dejaría la interfaz diciendo dos cosas opuestas, y ganaría la
+        frase. Se reemplaza en vez de ocultarse para no mover el layout y
+        para que la explicación llegue también en mobile, donde `title` no
+        existe.
+      */}
+      <p className="population-grid-hint">
+        {inspectable ? "Hacé click en una celda para ver el detalle de ese organismo." : INSPECT_UNAVAILABLE_HINT}
+      </p>
       {inspect.status !== "idle" && (
         <div className="organism-inspect-panel">
           {inspect.status === "loading" && <p className="organism-inspect-loading">Consultando el organismo…</p>}
