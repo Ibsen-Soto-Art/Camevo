@@ -1,6 +1,6 @@
 # CAMEVO — Arquitectura de Software y Stack Tecnológico
 
-**Versión 1.3 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.4 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 ---
 
@@ -171,3 +171,4 @@ accesibles — comportamiento esperado, no un bug.
 | PostgreSQL con JSONB | MySQL puro / almacenamiento en archivos planos | Balance entre estructura relacional (metadatos de corridas) y flexibilidad (snapshots de generación) |
 | WebSocket para streaming | Polling HTTP periódico | Menor latencia y menor carga de red para actualizaciones frecuentes (varias generaciones por segundo) |
 | Guardado intencional + identidad anónima por navegador (Grupo 1) | Persistir cada corrida automáticamente al completarse, sin ninguna noción de "de quién es" | Evita llenar Postgres con corridas experimentales que nadie pidió conservar, y da un aislamiento casual entre navegadores sin construir un sistema de cuentas — coherente con un proyecto de portafolio/divulgación sin presupuesto para gestión de usuarios real |
+| Submuestreo LTTB en el frontend | Renderizar todos los snapshots, o devolver menos puntos desde `GET /runs/:id` | Preserva la forma visual de la curva y todas las generaciones con evento catastrófico (RF-015), con −43% de trabajo de hilo principal en corridas de 1500 generaciones (150ms → 85ms, medido en navegador real). Se descartó hacerlo en el backend porque la corrida en vivo nunca pasa por ese endpoint — llega snapshot a snapshot por WebSocket — así que el caso más pesado no habría mejorado, además de cambiar el contrato de la API para todos sus consumidores |

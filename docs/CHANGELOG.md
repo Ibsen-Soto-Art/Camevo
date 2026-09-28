@@ -6,6 +6,123 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.20.2] — Submuestreo adaptativo LTTB en el gráfico de corrida
+
+**Documentos afectados:** `03-arquitectura.md` (v1.3 → v1.4 — nueva fila en la tabla de
+decisiones de diseño, §5)
+
+### Changed
+- Las corridas largas dejan de dibujar un punto por generación: `downsampleSnapshots`
+  reduce la serie a 300 puntos con LTTB (Largest Triangle Three Buckets, Steinarsson
+  2013) antes de que los datos lleguen a Recharts, conservando la silueta de la curva en
+  vez de tomar uno cada N (que puede caer sistemáticamente al lado de cada pico).
+- Umbral de activación: solo se aplica con **más de 300 snapshots**. Una corrida de 300
+  generaciones o menos se renderiza completa, sin perder un solo punto — la función
+  devuelve el mismo array, sin copiarlo.
+- Anclaje forzado: los snapshots con `catastropheOccurred === true` están **siempre** en
+  la muestra final. No es una preferencia estética — el eje X es categórico
+  (`dataKey="generation"` sin `type="number"`), así que una `<ReferenceLine>` sobre una
+  generación que no quedó en los datos no se dibujaría en absoluto, y los marcadores de
+  RF-015 desaparecerían del gráfico.
+- El target de 300 incluye las anclas, no son 300 más las anclas: el costo de renderizado
+  queda acotado. Cuando ambas garantías chocan (más generaciones catastróficas que el
+  target) ganan las anclas y el total se pasa — perder un marcador de RF-015 sería un
+  error de datos visible; pasarse del presupuesto solo es más lento.
+- El submuestreo vive encerrado en `RunChart`, no aguas arriba en `RunPanel`/`useRun`:
+  `PopulationGrid` y `ExplanatoryPanel` reciben los mismos snapshots y necesitan todos —
+  la normalización de color de la grilla recorre cada organismo de cada snapshot, así que
+  submuestrear antes le cambiaría la escala de color en silencio.
+
+**Medición** (navegador real, corrida guardada de 1500 generaciones, build de producción,
+mediana de 3 corridas — `test/e2e/chart-downsample-perf.spec.ts`):
+
+| Métrica | Antes | Después |
+|---|---|---|
+| Puntos dibujados | 1500 | 300 |
+| Trabajo de hilo principal (longtask) | 150.0 ms | **85.0 ms (−43%)** |
+| Tiempo hasta que aparece la curva | 849.7 ms | 846.3 ms (sin cambio) |
+| Latencia de hover (p50) | 27.3 ms | 26.2 ms (sin cambio) |
+
+**Motivo:** reducir el trabajo de renderizado del peor caso real de la aplicación (1500
+generaciones × 6 series). Queda registrado con el mismo rigor lo que el cambio **no**
+hace: el tiempo hasta que el gráfico aparece no mejora, porque lo domina el payload de
+`GET /runs/:id` (1500 snapshots, cada uno con su array de organismos completo), que el
+submuestreo en el frontend no toca por definición. La preservación de las catástrofes
+está garantizada por la función pura y verificada en tests unitarios; no hay verificación
+en navegador porque hoy no existe, vía UI, una corrida que sea larga y tenga catástrofes
+(se configuran solo con velocidad climática "fast", que extingue la población alrededor de
+la generación 60).
+
+---
+
+## [v0.20.1] — Eje Y de población dinámico
+
+**Documentos afectados:** ninguno.
+
+### Changed
+- El tercer eje Y (población, teal, derecho) aparece y desaparece junto con su serie: si
+  "Población viva" está oculta en la leyenda, el eje no se renderiza, y el margen derecho
+  del gráfico vuelve de 60px a 30px en vez de dejar una franja vacía donde estaba.
+- `resolveChartMargin()` se extrae como función pura y exportable, usada por el mismo
+  valor tanto por el `<LineChart>` como por el handler táctil: ese handler calcula el
+  rectángulo de trazado a partir del margen, así que un margen dinámico calculado en dos
+  lugares distintos se habría desincronizado en silencio — el gráfico se vería bien y el
+  toque en mobile apuntaría a la generación equivocada.
+- La `<Line>` de población ya usaba `hide` sobre el mismo `hiddenKeys` que decide el eje,
+  así que línea y eje se apagan siempre juntos: Recharts nunca queda con una serie
+  apuntando a un eje inexistente.
+
+**Motivo:** corrección del cambio anterior (v0.20.0) — al volverse ocultable la serie de
+población, su eje quedaba dibujado igual, ocupando espacio y mostrando una escala que no
+correspondía a ninguna línea visible.
+
+---
+
+## [v0.20.0] — Panel de valores fijo y leyenda interactiva
+
+**Documentos afectados:** ninguno.
+
+### Added
+- Leyenda interactiva: click (o Enter/Espacio, con `role="button"` y foco por teclado) en
+  cualquier ítem muestra u oculta esa línea. Las ocultas quedan en la leyenda, atenuadas
+  al 30%, en vez de desaparecer — sigue viéndose que existen y se pueden volver a activar.
+- Estado inicial de la leyenda: **Fitness promedio y Población viva visibles; clima
+  (AND/NOT/OR) y diversidad genética ocultos**. Son las dos métricas más intuitivas para
+  alguien sin trasfondo técnico (RNF-004); las otras cuatro quedan a un click para quien
+  quiera profundizar, sin saturar la vista inicial con seis líneas superpuestas.
+- El panel de valores muestra solo las series actualmente visibles: ocultar una línea en
+  la leyenda también la saca del panel.
+
+### Changed
+- El panel de valores persiste después de que el mouse sale del gráfico: ya no hay
+  `onMouseLeave` que limpie el estado, así que se puede hacer scroll para leerlo sin que
+  se borre. El tooltip flotante original desaparecía apenas el mouse salía del `<svg>`,
+  lo que lo volvía ilegible justo cuando hacía falta desplazarse para verlo.
+- Handler táctil explícito para mobile, agregado tras verificarlo con emulación táctil
+  real en Playwright (no por suposición): se midió que toques independientes sucesivos no
+  actualizaban de forma confiable la generación activa de Recharts más allá del primero,
+  mientras que los movimientos de mouse sí. El handler traduce la posición del toque a la
+  generación más cercana por su cuenta.
+
+### Removed
+- El tooltip flotante de Recharts con las descripciones pedagógicas completas por línea
+  —declarado como `Added` en v0.19.0 ("Tooltip pedagógico: descripción en lenguaje llano
+  conectando RF-015 con RF-011")— se retira y queda reemplazado por el panel fijo. El
+  tooltip tapaba con su propio cuadro justo las líneas que el usuario estaba tratando de
+  leer, que era el problema original. El contenido pedagógico no se pierde: la distinción
+  entre caída abrupta (RF-015) y caída gradual por clima (RF-011) vive ahora en las notas
+  de texto permanentes debajo del gráfico, visibles sin necesidad de pasar el mouse.
+- Con el tooltip se retiran también las funciones que solo existían para alimentarlo
+  (`ChartTooltip`, `buildHoverPayload`, `describeMetric`) y sus tests, en vez de dejarlas
+  como código muerto.
+
+**Motivo:** con seis series simultáneas el gráfico era visualmente denso y el tooltip
+flotante competía por el mismo espacio que los datos. Las dos mejoras atacan el mismo
+problema desde lados opuestos: menos líneas dibujadas por defecto, y los valores en un
+lugar fijo que no tapa nada.
+
+---
+
 ## [v0.19.1] — Nota pedagógica de "último organismo vivo"
 
 **Documentos afectados:** ninguno.
