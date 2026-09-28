@@ -3,8 +3,27 @@ import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContai
 import { getCatastropheGenerations } from "../lib/catastrophe";
 import type { GenerationSnapshot } from "../lib/camevo-client";
 
-/** Debe calzar con `margin` del `<LineChart>` de abajo — es el mismo rectángulo de trazado que Recharts usa internamente. */
-const CHART_MARGIN = { top: 10, right: 60, left: 20, bottom: 0 };
+/**
+ * Debe calzar con `margin` del `<LineChart>` de abajo — es el mismo
+ * rectángulo de trazado que Recharts usa internamente, y del que depende
+ * el cálculo táctil (`handleTouchPosition`).
+ *
+ * `right` es dinámico a propósito: con el eje de "Población" visible hay
+ * DOS columnas de ticks apiladas a la derecha (Clima + Población) y hacen
+ * falta 60px; si el usuario oculta "Población viva" desde la leyenda ese
+ * eje deja de renderizarse, y mantener los 60px dejaría una franja vacía
+ * a la derecha del gráfico. 30 es el valor que tenía antes de que
+ * existiera el tercer eje.
+ */
+const CHART_MARGIN_WITH_POPULATION_AXIS = { top: 10, right: 60, left: 20, bottom: 0 };
+const CHART_MARGIN_WITHOUT_POPULATION_AXIS = { top: 10, right: 30, left: 20, bottom: 0 };
+
+/** dataKey de la serie de población — el eje `yAxisId="population"` solo existe mientras esta serie esté visible. */
+const POPULATION_KEY = "populationSize";
+
+export function resolveChartMargin(hiddenKeys: ReadonlySet<string>) {
+  return hiddenKeys.has(POPULATION_KEY) ? CHART_MARGIN_WITHOUT_POPULATION_AXIS : CHART_MARGIN_WITH_POPULATION_AXIS;
+}
 
 const CLIMATE_COLORS = ["#d62728", "#2ca02c", "#9467bd"];
 
@@ -117,6 +136,28 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   const hoveredRow = hoveredGeneration === null ? null : chartRows.find((row) => row.generation === hoveredGeneration);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
+  // Mejora 2 (leyenda interactiva): Fitness y Población son las dos
+  // métricas más intuitivas para un visitante nuevo sin conocimientos
+  // técnicos — clima y diversidad quedan disponibles para quien quiera
+  // profundizar, sin saturar la vista inicial.
+  const [hiddenKeys, setHiddenKeys] = useState<ReadonlySet<string>>(() => new Set(DEFAULT_HIDDEN_KEYS));
+  const visibleSeries = useMemo(() => seriesList.filter((s) => !hiddenKeys.has(s.dataKey)), [seriesList, hiddenKeys]);
+
+  function toggleSeries(dataKey: string) {
+    setHiddenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(dataKey)) next.delete(dataKey);
+      else next.add(dataKey);
+      return next;
+    });
+  }
+
+  // El eje de población y el margen derecho van juntos: si la serie está
+  // oculta, el eje no se renderiza y el margen vuelve a 30 para no dejar
+  // una franja vacía a la derecha (ver resolveChartMargin).
+  const showPopulationAxis = !hiddenKeys.has(POPULATION_KEY);
+  const chartMargin = resolveChartMargin(hiddenKeys);
+
   /**
    * Verificado con Playwright (touch real, no asumido): un primer toque
    * SÍ dispara `onMouseMove` de `<LineChart>` y muestra valores reales
@@ -137,8 +178,8 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
     if (!container || chartRows.length === 0) return;
 
     const rect = container.getBoundingClientRect();
-    const plotLeft = rect.left + CHART_MARGIN.left;
-    const plotWidth = rect.width - CHART_MARGIN.left - CHART_MARGIN.right;
+    const plotLeft = rect.left + chartMargin.left;
+    const plotWidth = rect.width - chartMargin.left - chartMargin.right;
     if (plotWidth <= 0) return;
 
     const fraction = Math.min(1, Math.max(0, (clientX - plotLeft) / plotWidth));
@@ -161,22 +202,6 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   function handleTouch(event: ReactTouchEvent<HTMLDivElement>) {
     const touch = event.touches[0];
     if (touch) handleTouchPosition(touch.clientX);
-  }
-
-  // Mejora 2 (leyenda interactiva): Fitness y Población son las dos
-  // métricas más intuitivas para un visitante nuevo sin conocimientos
-  // técnicos — clima y diversidad quedan disponibles para quien quiera
-  // profundizar, sin saturar la vista inicial.
-  const [hiddenKeys, setHiddenKeys] = useState<ReadonlySet<string>>(() => new Set(DEFAULT_HIDDEN_KEYS));
-  const visibleSeries = useMemo(() => seriesList.filter((s) => !hiddenKeys.has(s.dataKey)), [seriesList, hiddenKeys]);
-
-  function toggleSeries(dataKey: string) {
-    setHiddenKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(dataKey)) next.delete(dataKey);
-      else next.add(dataKey);
-      return next;
-    });
   }
 
   return (
@@ -212,7 +237,7 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
         <ResponsiveContainer width="100%" height={height}>
           <LineChart
             data={chartRows}
-            margin={CHART_MARGIN}
+            margin={chartMargin}
             onMouseMove={(state) => {
               if (state?.activeLabel !== undefined) setHoveredGeneration(Number(state.activeLabel));
             }}
@@ -260,20 +285,27 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
               con "Clima" (0-16) — el máximo teórico real es gridWidth*gridHeight
               (hasta 1600, RNF-008), un orden de magnitud por encima de ambos.
               Recharts apila un segundo eje "right" hacia afuera del primero
-              automáticamente; `margin.right` se amplió de 30 a 60 para darle
-              espacio a esta segunda columna de ticks sin recortarla (mismo tipo
-              de bug ya cazado con Playwright para el eje izquierdo/derecho
-              originales — ver el comentario grande más arriba).
+              automáticamente; `margin.right` vale 60 mientras este eje existe,
+              para darle espacio a esa segunda columna de ticks sin recortarla
+              (mismo tipo de bug ya cazado con Playwright para el eje
+              izquierdo/derecho originales — ver el comentario grande arriba).
+
+              Solo se renderiza si "Población viva" está visible en la leyenda:
+              su `<Line>` usa `hide={hiddenKeys.has(...)}` sobre el MISMO
+              `hiddenKeys`, así que eje y línea se apagan siempre juntos —
+              Recharts nunca queda con una serie apuntando a un eje inexistente.
             */}
-            <YAxis
-              yAxisId="population"
-              orientation="right"
-              domain={[0, "auto"]}
-              label={{ value: "Población", angle: 90, position: "insideRight", fill: CHART_AXIS_TEXT_COLOR }}
-              tick={{ fill: CHART_AXIS_TEXT_COLOR }}
-              axisLine={{ stroke: CHART_GRID_COLOR }}
-              tickLine={{ stroke: CHART_GRID_COLOR }}
-            />
+            {showPopulationAxis && (
+              <YAxis
+                yAxisId="population"
+                orientation="right"
+                domain={[0, "auto"]}
+                label={{ value: "Población", angle: 90, position: "insideRight", fill: CHART_AXIS_TEXT_COLOR }}
+                tick={{ fill: CHART_AXIS_TEXT_COLOR }}
+                axisLine={{ stroke: CHART_GRID_COLOR }}
+                tickLine={{ stroke: CHART_GRID_COLOR }}
+              />
+            )}
             {/*
               Ajuste 1 (auditoría de interfaz post-producción) + Mejora 1
               (panel fijo que no desaparece al hacer scroll): el tooltip

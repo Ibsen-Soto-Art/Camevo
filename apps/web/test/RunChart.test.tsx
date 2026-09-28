@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import RunChart, { DEFAULT_HIDDEN_KEYS, buildSeriesList, toChartRows } from "../src/components/RunChart";
+import RunChart, { DEFAULT_HIDDEN_KEYS, buildSeriesList, resolveChartMargin, toChartRows } from "../src/components/RunChart";
 import type { GenerationSnapshot } from "../src/lib/camevo-client";
 import { getCatastropheGenerations } from "../src/lib/catastrophe";
 
@@ -114,5 +114,32 @@ describe("buildSeriesList + DEFAULT_HIDDEN_KEYS (Mejora 2: estado inicial de la 
     expect(DEFAULT_HIDDEN_KEYS).toEqual(["AND", "NOT", "OR", "geneticDiversity"]);
     expect(DEFAULT_HIDDEN_KEYS).not.toContain("averageFitness");
     expect(DEFAULT_HIDDEN_KEYS).not.toContain("populationSize");
+  });
+});
+
+/**
+ * El eje Y de población existe solo mientras su serie esté visible. La
+ * PRESENCIA del `<YAxis>` en el DOM se verifica en navegador real
+ * (test/e2e/chart-legend-toggle.spec.ts) porque el SVG no se monta en
+ * jsdom; acá se cubre la lógica pura que decide el margen derecho, que
+ * es la parte que puede desincronizarse en silencio del eje.
+ */
+describe("resolveChartMargin — el margen derecho sigue al eje de población", () => {
+  it("con 'Población viva' visible, reserva 60px a la derecha para la segunda columna de ticks", () => {
+    const hiddenKeys = new Set(["AND", "NOT", "OR", "geneticDiversity"]);
+    expect(resolveChartMargin(hiddenKeys).right).toBe(60);
+  });
+
+  it("con 'Población viva' oculta, vuelve a 30px — sin el eje, esos 60px dejarían una franja vacía", () => {
+    const hiddenKeys = new Set(["AND", "NOT", "OR", "geneticDiversity", "populationSize"]);
+    expect(resolveChartMargin(hiddenKeys).right).toBe(30);
+  });
+
+  it("solo cambia `right`: top/left/bottom son idénticos en ambos estados", () => {
+    const withAxis = resolveChartMargin(new Set<string>());
+    const withoutAxis = resolveChartMargin(new Set(["populationSize"]));
+    expect(withoutAxis.top).toBe(withAxis.top);
+    expect(withoutAxis.left).toBe(withAxis.left);
+    expect(withoutAxis.bottom).toBe(withAxis.bottom);
   });
 });

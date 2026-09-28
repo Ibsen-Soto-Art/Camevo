@@ -50,6 +50,49 @@ test("click en un ítem oculto lo activa: pasa a opacidad completa y su valor ap
   await expect(page.locator(".chart-hover-panel")).toContainText("Diversidad genética");
 });
 
+test("el eje Y de población aparece/desaparece junto con su serie, sin dejar el margen derecho vacío", async ({ page }) => {
+  // El riesgo concreto de quitar el eje es que la `<Line yAxisId="population">`
+  // quede apuntando a un eje inexistente. La línea usa `hide` sobre el mismo
+  // `hiddenKeys`, así que no debería pasar — se verifica de verdad, mirando la
+  // consola del navegador, en vez de asumirlo.
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+  page.on("pageerror", (err) => consoleErrors.push(String(err)));
+
+  await runWithClimate(page);
+
+  const chart = page.locator(".chart-container").first();
+  const populationAxisLabel = chart.locator("text", { hasText: "Población" });
+
+  // El ancho del área de trazado sale de la grilla cartesiana, que ocupa
+  // exactamente ese rectángulo — es la forma directa de medir que
+  // `margin.right` cambió, sin depender de valores internos de Recharts.
+  const plotWidth = async () =>
+    (await chart.locator(".recharts-cartesian-grid-horizontal line").first().boundingBox())!.width;
+
+  // Visible por defecto: el eje existe.
+  await expect(populationAxisLabel).toBeVisible();
+  const widthWithAxis = await plotWidth();
+
+  // Al ocultar la serie, el eje desaparece por completo del SVG.
+  await legendItem(page, "Población viva").click();
+  await expect(populationAxisLabel).toHaveCount(0);
+
+  // ...y el área de trazado se ensancha ~30px (margin.right 60 → 30), en vez
+  // de dejar una franja vacía donde estaba el eje.
+  const widthWithoutAxis = await plotWidth();
+  expect(widthWithoutAxis - widthWithAxis).toBeGreaterThan(20);
+
+  // Al volver a mostrarla, el eje reaparece y el área vuelve a su ancho original.
+  await legendItem(page, "Población viva").click();
+  await expect(populationAxisLabel).toBeVisible();
+  expect(await plotWidth()).toBeCloseTo(widthWithAxis, 0);
+
+  expect(consoleErrors).toEqual([]);
+});
+
 test("click en un ítem visible lo oculta: pasa a opacidad reducida y desaparece del panel de valores", async ({ page }) => {
   await runWithClimate(page);
 
