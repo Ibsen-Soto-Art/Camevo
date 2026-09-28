@@ -6,6 +6,29 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.20.3] — Cursor e indicador condicionales en la grilla poblacional
+
+**Documentos afectados:** ninguno — RF-027 mantiene el mismo alcance declarado en v0.16.0
+(solo corridas en vivo); este cambio hace visible en la UI un límite que ya existía en el
+servidor.
+
+### Changed
+- PopulationGrid muestra cursor de "podés clickear" e invitación ("Hacé click en una
+  celda...") solo cuando la corrida está activa (running o paused). En cualquier otro
+  estado (done, extinción, corrida guardada), el cursor vuelve al default y la frase se
+  reemplaza por "La inspección de organismos solo está disponible durante una corrida en
+  vivo."
+- El click sigue funcionando en cualquier estado — quien clickee fuera de una corrida
+  activa recibe el mensaje del servidor ("La corrida ya no está activa en el servidor"),
+  no silencio ni un error genérico.
+- El texto vive en una constante única (INSPECT_UNAVAILABLE_HINT) compartida entre la
+  frase visible y el atributo title del canvas, para que no puedan divergir.
+
+**Motivo:** la grilla invitaba a clickear aunque el servidor ya no tuviera esa corrida en
+memoria — una expectativa rota que generaba el mensaje de error sin aviso previo.
+
+---
+
 ## [v0.20.2] — Submuestreo adaptativo LTTB en el gráfico de corrida
 
 **Documentos afectados:** `03-arquitectura.md` (v1.3 → v1.4 — nueva fila en la tabla de
