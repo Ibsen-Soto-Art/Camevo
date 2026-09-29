@@ -6,6 +6,41 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.21.1] — Correcciones de auditoría exploratoria
+
+**Documentos afectados:** ninguno.
+
+### Fixed
+- **catastropheEnabled sin validación (introducido en v0.21.0):** enviar un valor no
+  booleano (string, número, objeto) era aceptado y se persistía con el tipo incorrecto en
+  el JSONB. Ahora se rechaza con 400 "catastropheEnabled debe ser booleano", al mismo nivel
+  que climateEnabled — verificado contra producción real antes de esta entrada.
+- **Eje "Clima" siempre visible aunque sin series:** el eje Y de clima se renderizaba
+  incondicionalmente, igual que el de Población antes de v0.20.1. Ahora desaparece cuando
+  las tres series climáticas están ocultas en la leyenda, y el margen derecho baja de 60 a
+  30 px — el área de trazado de la pantalla inicial es visiblemente más ancha.
+- **Estado de corrida en inglés:** "running", "paused" y "done" aparecían en inglés en la
+  línea de estado. Ahora muestran "en curso", "pausada" y "finalizada".
+- **Ocultar todas las series dejaba un estado sin salida:** con las 6 líneas ocultas, el
+  panel de valores mostraba el último valor sin contexto y la leyenda perdía el foco tras
+  cada toggle. Ahora el panel muestra "Activá al menos una línea en la leyenda para ver los
+  valores" y el foco vuelve al ítem recién alternado — lo que resuelve también el bug de
+  teclado ① (Enter → Espacio → Enter encadenan sin perder el foco ni scrollear la página),
+  que se había reportado por separado.
+- **Handler táctil desincronizado del margen real (no planeado):** el fix del eje de clima
+  cambió el margen dinámico y dejó al handler táctil calculando el área de trazado con una
+  aproximación que ya no era válida — producía saltos de generación ~300 ms después de cada
+  toque. Se corrigió en el mismo commit porque el cambio lo destapó: el handler ahora lee
+  el rectángulo real de la grilla cartesiana del DOM, y una ventana de 700 ms descarta los
+  eventos de mouse sintéticos que el navegador emite tras el touchend.
+
+**Motivo:** auditoría exploratoria del 2026-09-29 — búsqueda deliberada de comportamientos
+que los tests existentes no detectaban. 9 anomalías encontradas; estas 5 se corrigieron en
+esta entrada (ninguna crítica). Las restantes son decisiones de producto (④), limitaciones
+documentadas (⑦ ⑧) o ajuste menor de prosa (⑥).
+
+---
+
 ## [v0.21.0] — Eventos catastróficos configurables en todas las velocidades climáticas
 
 **Documentos afectados:** `02-requisitos.md` (v1.5 → v1.6 — RF-015 amplía su alcance a las
