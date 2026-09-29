@@ -87,6 +87,15 @@ function validationErrors(body: CreateRunRequestBody): string[] {
     errors.push("climateEnabled debe ser booleano");
   }
 
+  // RF-015: mismo trato que climateEnabled. Sin esto, `catastropheEnabled:
+  // "sí"` pasaba la validación, entraba como truthy al gate de
+  // buildSimulationConfig y se persistía TAL CUAL en el JSONB de la
+  // corrida — un string donde PersistedRunConfig declara boolean, que
+  // además vuelve al cliente en GET /runs/:id.
+  if (body.catastropheEnabled !== undefined && typeof body.catastropheEnabled !== "boolean") {
+    errors.push("catastropheEnabled debe ser booleano");
+  }
+
   if (
     body.climateChangeSpeed !== undefined &&
     body.climateChangeSpeed !== "slow" &&

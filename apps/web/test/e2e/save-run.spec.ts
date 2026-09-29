@@ -13,7 +13,7 @@ async function runShortSimulation(page: Page): Promise<void> {
   await page.goto("/");
   await page.getByLabel("Generaciones").fill("10");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 }
 
 test("una corrida recién terminada no aparece en el historial hasta hacer click en 'Guardar esta corrida'", async ({ page }) => {

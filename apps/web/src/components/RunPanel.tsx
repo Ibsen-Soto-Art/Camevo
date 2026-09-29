@@ -1,5 +1,5 @@
 import type { ClimateChangeSpeed } from "../lib/camevo-client";
-import type { RunView, SaveStatus } from "../hooks/useRun";
+import type { RunStatus, RunView, SaveStatus } from "../hooks/useRun";
 import ExplanatoryPanel from "./ExplanatoryPanel";
 import PopulationGrid from "./PopulationGrid";
 import RunChart from "./RunChart";
@@ -25,6 +25,21 @@ export interface RunPanelProps {
   readonly saveError?: string | null;
 }
 
+/**
+ * RNF-004: `RunStatus` es vocabulario interno en inglés, y hasta ahora se
+ * imprimía crudo — "estado: running" era la ÚNICA cadena en inglés
+ * visible en toda la interfaz (verificado recorriendo los nodos de texto
+ * de la página). "idle" no aparece en esta tabla a propósito: una corrida
+ * que no arrancó no tiene nada que informar, así que no se muestra la
+ * línea de estado (ver abajo).
+ */
+const STATUS_LABEL: Record<Exclude<RunStatus, "idle">, string> = {
+  running: "en curso",
+  paused: "pausada",
+  done: "finalizada",
+  error: "error",
+};
+
 /** Un run en curso: título, estado, gráfico, grilla poblacional y panel explicativo — la unidad que se repite en modo comparación (RF-025). */
 export default function RunPanel({
   title,
@@ -42,13 +57,13 @@ export default function RunPanel({
   return (
     <div className="run-panel">
       <h2>{title}</h2>
-      {run.runId && (
+      {run.runId && run.status !== "idle" && (
         <p className="status-line">
           Corrida{" "}
           <code className="run-id" title={run.runId}>
             {run.runId}
           </code>{" "}
-          — estado: <strong>{run.status}</strong>
+          — estado: <strong>{STATUS_LABEL[run.status]}</strong>
         </p>
       )}
       {run.errorMessage && <p className="error">{run.errorMessage}</p>}

@@ -18,7 +18,7 @@ async function runCatastropheScenario(page: import("@playwright/test").Page) {
   await page.getByText("Configuración de la corrida").click();
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 }
 
 test("Ajuste 1 + Mejora 1: hover llena el panel de valores (sin descripciones pedagógicas), sin mostrar el tooltip flotante de Recharts", async ({
@@ -84,7 +84,7 @@ test.describe("Mejora 1: activación táctil real en mobile", () => {
     await page.getByLabel("Generaciones").fill("200");
     await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
     await page.getByRole("button", { name: "Iniciar corrida" }).click();
-    await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+    await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 
     const wrapper = page.locator(".chart-container .recharts-wrapper").first();
     await wrapper.scrollIntoViewIfNeeded();
@@ -123,7 +123,7 @@ test("Ajuste 2: un evento catastrófico pinta un overlay ámbar de grilla comple
   await page.getByText("Configuración de la corrida").click();
   await page.getByLabel("Generaciones").fill("15");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 
   // El preset dispara catástrofes en múltiplos de 10 (FAST_CATASTROPHE.intervalGenerations); con 15 generaciones, la de gen 10 sigue dentro de la ventana de persistencia.
   await expect(page.getByText(/Evento catastrófico — gen 10/)).toBeVisible();
@@ -146,7 +146,7 @@ test("Ajuste 4: al menos 8px de separación entre la leyenda, el label \"Generac
   await page.getByText("Configuración de la corrida").click();
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 
   const chart = page.locator(".chart-container").first();
   const legendBox = (await chart.locator(".recharts-legend-wrapper").first().boundingBox())!;

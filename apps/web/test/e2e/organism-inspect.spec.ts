@@ -48,7 +48,7 @@ test("click en la celda ocupada de una corrida EN VIVO (todavía corriendo) mues
   // que el click llegue a viajar — hay que atraparla mientras sigue
   // "running", no esperar a "done".
   await setupOneCellGrid(page, 20, 400);
-  await expect(page.locator(".status-line")).toContainText("running", { timeout: 10_000 });
+  await expect(page.locator(".status-line")).toContainText("en curso", { timeout: 10_000 });
 
   await clickUntilOrganismFound(page, page.locator(".population-grid-canvas"));
 
@@ -64,7 +64,7 @@ test("click en una corrida que ya terminó muestra el 404 específico de 'corrid
   // (RF-025) o con un reinicio del servidor. El mensaje debe ser
   // específico, no un spinner indefinido ni un error de consola.
   await setupOneCellGrid(page, 3, 0);
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 
   await clickUntilOrganismFound(page, page.locator(".population-grid-canvas"));
 

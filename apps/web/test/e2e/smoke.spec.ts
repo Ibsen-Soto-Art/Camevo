@@ -15,7 +15,7 @@ test("crea una corrida corta y la transmite en vivo, sin errores de consola", as
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
 
   await expect(page.locator(".status-line")).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 
   const lineCount = await page.locator(".chart-container svg .recharts-line").count();
   expect(lineCount).toBeGreaterThan(0);

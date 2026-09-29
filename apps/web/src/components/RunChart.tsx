@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type TouchEvent as ReactTouchEvent } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getCatastropheGenerations } from "../lib/catastrophe";
 import { downsampleSnapshots } from "../lib/downsample";
@@ -16,14 +16,37 @@ import type { GenerationSnapshot } from "../lib/camevo-client";
  * a la derecha del gráfico. 30 es el valor que tenía antes de que
  * existiera el tercer eje.
  */
-const CHART_MARGIN_WITH_POPULATION_AXIS = { top: 10, right: 60, left: 20, bottom: 0 };
-const CHART_MARGIN_WITHOUT_POPULATION_AXIS = { top: 10, right: 30, left: 20, bottom: 0 };
-
 /** dataKey de la serie de población — el eje `yAxisId="population"` solo existe mientras esta serie esté visible. */
 const POPULATION_KEY = "populationSize";
 
-export function resolveChartMargin(hiddenKeys: ReadonlySet<string>) {
-  return hiddenKeys.has(POPULATION_KEY) ? CHART_MARGIN_WITHOUT_POPULATION_AXIS : CHART_MARGIN_WITH_POPULATION_AXIS;
+/**
+ * Ancho que Recharts necesita por cada columna de ticks a la derecha.
+ * "Clima" y "Población" son los dos ejes `orientation="right"` y se
+ * apilan hacia afuera, así que el margen derecho depende de CUÁNTOS hay
+ * visibles, no de uno solo.
+ */
+const RIGHT_MARGIN_PER_AXIS = 30;
+
+/** Las claves climáticas son dinámicas (`climateTaskIds`, derivadas de los snapshots), nunca una lista fija de AND/NOT/OR. */
+export function hasVisibleClimateSeries(hiddenKeys: ReadonlySet<string>, climateKeys: readonly string[]): boolean {
+  return climateKeys.some((key) => !hiddenKeys.has(key));
+}
+
+/**
+ * El margen derecho sigue a los ejes que realmente se renderizan. Con
+ * los dos visibles son 60px (el valor histórico); con uno, 30; con
+ * ninguno se mantiene el piso de 30 para que la última etiqueta del eje
+ * X no quede recortada contra el borde del SVG.
+ *
+ * Recibe `climateKeys` en vez de asumir ["AND","NOT","OR"]: esos ids
+ * salen de DEFAULT_TASKS en el backend vía los snapshots, así que
+ * hardcodearlos acá haría que una tarea nueva tuviera línea climática
+ * sin contar para su propio eje — el mismo bug que este patrón resolvió
+ * para Población en v0.20.1, al revés.
+ */
+export function resolveChartMargin(hiddenKeys: ReadonlySet<string>, climateKeys: readonly string[] = []) {
+  const rightAxes = (hiddenKeys.has(POPULATION_KEY) ? 0 : 1) + (hasVisibleClimateSeries(hiddenKeys, climateKeys) ? 1 : 0);
+  return { top: 10, right: RIGHT_MARGIN_PER_AXIS * Math.max(1, rightAxes), left: 20, bottom: 0 };
 }
 
 const CLIMATE_COLORS = ["#d62728", "#2ca02c", "#9467bd"];
@@ -158,6 +181,18 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   const [hoveredGeneration, setHoveredGeneration] = useState<number | null>(null);
   const hoveredRow = hoveredGeneration === null ? null : chartRows.find((row) => row.generation === hoveredGeneration);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  /*
+   * Tras un `touchend`, el navegador emite eventos de mouse SINTÉTICOS
+   * (~300ms después) para compatibilidad con páginas que solo manejan
+   * mouse. Esos eventos llegan al `onMouseMove` de Recharts y le hacen
+   * recalcular `activeLabel` por su cuenta, pisando lo que el handler
+   * táctil ya había fijado — medido en mobile: el panel mostraba una
+   * generación y un instante después cambiaba a otra sin que nadie
+   * tocara nada. Ignorar el mouse durante esta ventana elimina la
+   * carrera, en vez de depender de que los dos cálculos coincidan.
+   */
+  const lastTouchAtRef = useRef(0);
+  const SYNTHETIC_MOUSE_WINDOW_MS = 700;
 
   // Mejora 2 (leyenda interactiva): Fitness y Población son las dos
   // métricas más intuitivas para un visitante nuevo sin conocimientos
@@ -166,7 +201,27 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   const [hiddenKeys, setHiddenKeys] = useState<ReadonlySet<string>>(() => new Set(DEFAULT_HIDDEN_KEYS));
   const visibleSeries = useMemo(() => seriesList.filter((s) => !hiddenKeys.has(s.dataKey)), [seriesList, hiddenKeys]);
 
+  /*
+   * Restaurar el foco al ítem recién alternado. Medido con Playwright:
+   * al cambiar `hiddenKeys`, Recharts vuelve a invocar el `content` de
+   * su `<Legend>` y el `<li>` enfocado se destruye — el foco caía a
+   * `<body>`, y la siguiente pulsación de Espacio scrolleaba la página
+   * en vez de alternar otra serie. Con esto, un usuario de teclado puede
+   * encadenar varios toggles sin volver a tabular, y si oculta TODAS las
+   * series sigue teniendo un punto de partida visible para reactivar
+   * alguna (que de otro modo sería un callejón sin salida).
+   */
+  const legendRef = useRef<HTMLUListElement>(null);
+  const [lastToggledKey, setLastToggledKey] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (lastToggledKey === null) return;
+    const item = legendRef.current?.querySelector<HTMLLIElement>(`[data-series-key="${CSS.escape(lastToggledKey)}"]`);
+    if (item && document.activeElement !== item) item.focus();
+  }, [lastToggledKey, hiddenKeys]);
+
   function toggleSeries(dataKey: string) {
+    setLastToggledKey(dataKey);
     setHiddenKeys((prev) => {
       const next = new Set(prev);
       if (next.has(dataKey)) next.delete(dataKey);
@@ -175,11 +230,16 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
     });
   }
 
-  // El eje de población y el margen derecho van juntos: si la serie está
-  // oculta, el eje no se renderiza y el margen vuelve a 30 para no dejar
-  // una franja vacía a la derecha (ver resolveChartMargin).
+  // Los ejes derechos y el margen van juntos: un eje cuya serie está
+  // oculta no se renderiza, y el margen se ajusta para no dejar una
+  // franja vacía a la derecha (ver resolveChartMargin).
+  const climateKeys = useMemo(
+    () => seriesList.filter((s) => s.yAxisId === "climate").map((s) => s.dataKey),
+    [seriesList],
+  );
   const showPopulationAxis = !hiddenKeys.has(POPULATION_KEY);
-  const chartMargin = resolveChartMargin(hiddenKeys);
+  const showClimateAxis = hasVisibleClimateSeries(hiddenKeys, climateKeys);
+  const chartMargin = resolveChartMargin(hiddenKeys, climateKeys);
 
   /**
    * Verificado con Playwright (touch real, no asumido): un primer toque
@@ -200,9 +260,27 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
     const container = chartContainerRef.current;
     if (!container || chartRows.length === 0) return;
 
+    /*
+     * El rectángulo de trazado se LEE del DOM, no se calcula a partir del
+     * margen. La grilla cartesiana ocupa exactamente el área de líneas,
+     * mientras que `rect.width - margin.left - margin.right` ignora el
+     * ancho que los propios ejes Y ocupan dentro de ese rectángulo —
+     * medido, un contenedor de 554px puede tener un área de líneas de
+     * ~294px, así que la aproximación por margen desplazaba el mapeo.
+     *
+     * Eso importa más desde que los ejes derechos son condicionales: al
+     * desaparecer el de "Clima", el área de trazado se ensancha y la vieja
+     * aproximación quedaba desfasada respecto del hit-testing real de
+     * Recharts. Medido en mobile: el toque fijaba una generación y ~300ms
+     * después el evento de mouse sintético que el navegador emite tras el
+     * touchend la cambiaba por otra, porque los dos cálculos no coincidían.
+     * Leyendo la grilla no hay dos fuentes de verdad que puedan discrepar.
+     */
+    const gridLine = container.querySelector(".recharts-cartesian-grid-horizontal line");
+    const plotRect = gridLine?.getBoundingClientRect();
     const rect = container.getBoundingClientRect();
-    const plotLeft = rect.left + chartMargin.left;
-    const plotWidth = rect.width - chartMargin.left - chartMargin.right;
+    const plotLeft = plotRect && plotRect.width > 0 ? plotRect.left : rect.left + chartMargin.left;
+    const plotWidth = plotRect && plotRect.width > 0 ? plotRect.width : rect.width - chartMargin.left - chartMargin.right;
     if (plotWidth <= 0) return;
 
     const fraction = Math.min(1, Math.max(0, (clientX - plotLeft) / plotWidth));
@@ -224,7 +302,10 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
 
   function handleTouch(event: ReactTouchEvent<HTMLDivElement>) {
     const touch = event.touches[0];
-    if (touch) handleTouchPosition(touch.clientX);
+    if (touch) {
+      lastTouchAtRef.current = Date.now();
+      handleTouchPosition(touch.clientX);
+    }
   }
 
   return (
@@ -262,6 +343,7 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             data={chartRows}
             margin={chartMargin}
             onMouseMove={(state) => {
+              if (Date.now() - lastTouchAtRef.current < SYNTHETIC_MOUSE_WINDOW_MS) return;
               if (state?.activeLabel !== undefined) setHoveredGeneration(Number(state.activeLabel));
             }}
           >
@@ -294,15 +376,26 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
               axisLine={{ stroke: CHART_GRID_COLOR }}
               tickLine={{ stroke: CHART_GRID_COLOR }}
             />
-            <YAxis
-              yAxisId="climate"
-              orientation="right"
-              domain={[0, "auto"]}
-              label={{ value: "Clima", angle: 90, position: "insideRight", fill: CHART_AXIS_TEXT_COLOR }}
-              tick={{ fill: CHART_AXIS_TEXT_COLOR }}
-              axisLine={{ stroke: CHART_GRID_COLOR }}
-              tickLine={{ stroke: CHART_GRID_COLOR }}
-            />
+            {/*
+              Mismo patrón que el eje de Población (v0.20.1), aplicado al
+              caso que quedó afuera: las series climáticas están OCULTAS
+              por defecto (DEFAULT_HIDDEN_KEYS), así que sin esto la
+              primera pantalla mostraba un eje "Clima" con escala
+              numérica y ninguna línea que lo usara. También cubre una
+              corrida sin módulo climático, donde `climateKeys` viene
+              vacío y no existe ninguna serie para ese eje.
+            */}
+            {showClimateAxis && (
+              <YAxis
+                yAxisId="climate"
+                orientation="right"
+                domain={[0, "auto"]}
+                label={{ value: "Clima", angle: 90, position: "insideRight", fill: CHART_AXIS_TEXT_COLOR }}
+                tick={{ fill: CHART_AXIS_TEXT_COLOR }}
+                axisLine={{ stroke: CHART_GRID_COLOR }}
+                tickLine={{ stroke: CHART_GRID_COLOR }}
+              />
+            )}
             {/*
               Tercer eje (población): NO comparte escala con "Fitness" (~0-3) ni
               con "Clima" (0-16) — el máximo teórico real es gridWidth*gridHeight
@@ -355,12 +448,13 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             */}
             <Legend
               content={() => (
-                <ul className="chart-legend">
+                <ul className="chart-legend" ref={legendRef}>
                   {seriesList.map((s) => {
                     const isHidden = hiddenKeys.has(s.dataKey);
                     return (
                       <li
                         key={s.dataKey}
+                        data-series-key={s.dataKey}
                         className="chart-legend-item"
                         style={{ opacity: isHidden ? 0.3 : 1 }}
                         role="button"
@@ -430,7 +524,9 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
         aunque el snapshot lo tenga.
       */}
       <div className="chart-hover-panel">
-        {hoveredRow ? (
+        {visibleSeries.length === 0 ? (
+          <p className="chart-hover-placeholder">Activá al menos una línea en la leyenda para ver los valores.</p>
+        ) : hoveredRow ? (
           <div className="chart-values-panel">
             <p className="chart-values-generation">Generación {hoveredRow.generation}</p>
             {(() => {

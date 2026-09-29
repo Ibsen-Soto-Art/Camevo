@@ -61,7 +61,7 @@ async function saveLongRun(page: Page): Promise<void> {
   await page.getByLabel("Generaciones").fill(String(GENERATIONS));
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 180_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 180_000 });
 
   await page.getByRole("button", { name: "Guardar esta corrida" }).click();
   await expect(page.getByRole("button", { name: "Guardada ✓" })).toBeVisible({ timeout: 30_000 });

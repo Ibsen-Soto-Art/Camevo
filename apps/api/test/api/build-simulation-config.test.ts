@@ -120,6 +120,46 @@ describe("buildSimulationConfig", () => {
     }
   });
 
+  it("catastropheEnabled no booleano se RECHAZA, igual que climateEnabled — nunca llega al JSONB como string u objeto", () => {
+    /*
+     * Auditoría exploratoria: `catastropheEnabled: "sí"` pasaba la
+     * validación, entraba como truthy al gate de buildSimulationConfig y
+     * se persistía tal cual, aunque PersistedRunConfig lo declara
+     * `boolean` y ese valor vuelve al cliente en GET /runs/:id.
+     */
+    for (const value of ["sí", "true", 1, 0, {}, []] as unknown[]) {
+      const parsed = parseCreateRunRequest({ gridWidth: 10, gridHeight: 10, updates: 10, catastropheEnabled: value } as Record<string, unknown>);
+      expect("errors" in parsed, `catastropheEnabled=${JSON.stringify(value)}`).toBe(true);
+      if ("errors" in parsed) expect(parsed.errors).toContain("catastropheEnabled debe ser booleano");
+    }
+  });
+
+  it("lo que se persiste es SIEMPRE un boolean real, tanto explícito como por defecto", () => {
+    for (const [sent, expected] of [[true, true], [false, false], [undefined, true]] as const) {
+      const parsed = parseCreateRunRequest({
+        gridWidth: 10, gridHeight: 10, updates: 10,
+        ...(sent === undefined ? {} : { catastropheEnabled: sent }),
+      });
+      expect("config" in parsed).toBe(true);
+      if ("config" in parsed) {
+        expect(typeof parsed.config.catastropheEnabled).toBe("boolean");
+        expect(parsed.config.catastropheEnabled).toBe(expected);
+      }
+    }
+  });
+
+  it("null explícito se rechaza, exactamente igual que climateEnabled: null (verificado, no asumido)", () => {
+    // Antes del fix, `null` caía al default vía `?? DEFAULTS`. Ahora se
+    // rechaza — que es lo que climateEnabled ya hacía, así que los dos
+    // campos booleanos del contrato se comportan igual. Solo `undefined`
+    // (campo ausente) toma el default.
+    for (const field of ["climateEnabled", "catastropheEnabled"]) {
+      const parsed = parseCreateRunRequest({ gridWidth: 10, gridHeight: 10, updates: 10, [field]: null } as Record<string, unknown>);
+      expect("errors" in parsed, field).toBe(true);
+      if ("errors" in parsed) expect(parsed.errors).toContain(`${field} debe ser booleano`);
+    }
+  });
+
   it("sin clima activo no hay catástrofes aunque catastropheEnabled sea true — son una dimensión del módulo climático", () => {
     const config = buildSimulationConfig(
       samplePersistedConfig({ climateEnabled: false, catastropheEnabled: true, climateChangeSpeed: "fast" }),

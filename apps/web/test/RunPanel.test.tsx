@@ -128,7 +128,7 @@ describe("<RunPanel /> — alimentado con un array completo de una sola vez (pat
     );
 
     expect(screen.getAllByText(/rescate evolutivo/i).length).toBeGreaterThan(0);
-    expect(document.querySelector(".status-line")).toHaveTextContent(/estado:\s*done/i);
+    expect(document.querySelector(".status-line")).toHaveTextContent(/estado:\s*finalizada/i);
   });
 });
 
@@ -297,5 +297,43 @@ describe("<RunPanel /> — click-to-inspect solo mientras la corrida sigue abier
     expect(paused.querySelector(".population-grid-hint")?.textContent).toBe(
       running.querySelector(".population-grid-hint")?.textContent,
     );
+  });
+});
+
+/**
+ * RNF-004: "estado: running" era la única cadena en inglés visible en
+ * toda la interfaz (verificado recorriendo los nodos de texto de la
+ * página en una auditoría exploratoria).
+ */
+describe("<RunPanel /> — el estado de la corrida se muestra en español", () => {
+  function renderWithStatus(status: RunStatus) {
+    return render(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={{ ...historicalRunHandle([snapshot({ generation: 0 })]), status }}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+      />,
+    );
+  }
+
+  it.each<[RunStatus, string]>([
+    ["running", "en curso"],
+    ["paused", "pausada"],
+    ["done", "finalizada"],
+    ["error", "error"],
+  ])("status '%s' se muestra como '%s'", (status, label) => {
+    const { container } = renderWithStatus(status);
+    const line = container.querySelector(".status-line")!;
+    expect(line).toHaveTextContent(`estado: ${label}`);
+    expect(line.textContent).not.toMatch(/\b(running|paused|done|idle)\b/);
+  });
+
+  it("status 'idle': no se muestra la línea de estado — una corrida que no arrancó no tiene nada que informar", () => {
+    const { container } = renderWithStatus("idle");
+    expect(container.querySelector(".status-line")).toBeNull();
   });
 });

@@ -22,18 +22,18 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * contrario este test seguiría en verde aunque "Población" se recortara
  * por completo.
  */
-async function assertNoAxisLabelClipping(chart: Locator) {
+async function assertNoAxisLabelClipping(chart: Locator, expected: readonly string[] = ["Fitness", "Clima", "Población"]) {
   const svg = chart.locator("> svg.recharts-surface").first();
   await expect(svg).toBeVisible();
   const svgBox = (await svg.boundingBox())!;
 
-  const labels = {
+  const labels: Record<string, Locator> = {
     Fitness: chart.locator("text", { hasText: "Fitness" }),
     Clima: chart.locator("text", { hasText: "Clima" }),
     Población: chart.locator("text", { hasText: "Población" }),
   };
 
-  for (const [name, locator] of Object.entries(labels)) {
+  for (const [name, locator] of Object.entries(labels).filter(([n]) => expected.includes(n))) {
     await expect(locator, `label "${name}" visible`).toBeVisible();
     const box = (await locator.boundingBox())!;
 
@@ -48,6 +48,21 @@ async function assertNoAxisLabelClipping(chart: Locator) {
   }
 }
 
+/**
+ * Los ejes solo existen mientras alguna de sus series esté visible, y las
+ * tres climáticas están OCULTAS por defecto (DEFAULT_HIDDEN_KEYS). Para
+ * que este test siga midiendo el peor caso —los tres labels rotados
+ * apilados a la vez— hay que encenderlas explícitamente; antes aparecían
+ * "gratis" porque el eje se dibujaba aunque no hubiera ninguna línea.
+ */
+async function enableClimateSeries(chart: Locator) {
+  for (const name of ["Clima: AND", "Clima: NOT", "Clima: OR"]) {
+    const item = chart.locator(".chart-legend-item", { hasText: name });
+    if (Number(await item.evaluate((el) => getComputedStyle(el).opacity)) < 0.5) await item.click();
+  }
+  await expect(chart.locator("text", { hasText: "Clima" }).first()).toBeVisible();
+}
+
 async function waitForClimateLines(page: Page) {
   // Fitness + Diversidad + Población + hasta 3 líneas de clima = 6 con las 3 tareas activas.
   // Mejora 2: la leyenda ahora es contenido custom (`.chart-legend-item`), no el render default de Recharts.
@@ -56,7 +71,11 @@ async function waitForClimateLines(page: Page) {
 
 test("eje Y sin recorte: estado sin corrida (legend mínima)", async ({ page }) => {
   await page.goto("/");
-  await assertNoAxisLabelClipping(page.locator(".chart-container .recharts-wrapper").first());
+  // Sin snapshots no hay ninguna serie climática (climateTaskIds sale de
+  // los propios snapshots), así que el eje "Clima" legítimamente no existe.
+  const chart = page.locator(".chart-container .recharts-wrapper").first();
+  await expect(chart.locator("text", { hasText: "Clima" })).toHaveCount(0);
+  await assertNoAxisLabelClipping(chart, ["Fitness", "Población"]);
 });
 
 test("eje Y sin recorte: corrida real en curso (legend completa, 6 líneas)", async ({ page }) => {
@@ -65,7 +84,9 @@ test("eje Y sin recorte: corrida real en curso (legend completa, 6 líneas)", as
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
   await waitForClimateLines(page);
 
-  await assertNoAxisLabelClipping(page.locator(".chart-container .recharts-wrapper").first());
+  const chart = page.locator(".chart-container .recharts-wrapper").first();
+  await enableClimateSeries(chart);
+  await assertNoAxisLabelClipping(chart);
 });
 
 test("eje Y sin recorte: modo comparación (height=320, el escenario más ajustado)", async ({ page }) => {
@@ -76,6 +97,8 @@ test("eje Y sin recorte: modo comparación (height=320, el escenario más ajusta
   await waitForClimateLines(page);
 
   const charts = page.locator(".chart-container .recharts-wrapper");
-  await assertNoAxisLabelClipping(charts.nth(0));
-  await assertNoAxisLabelClipping(charts.nth(1));
+  for (const i of [0, 1]) {
+    await enableClimateSeries(charts.nth(i));
+    await assertNoAxisLabelClipping(charts.nth(i));
+  }
 });

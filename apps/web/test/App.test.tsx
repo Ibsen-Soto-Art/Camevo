@@ -128,7 +128,7 @@ describe("<App />", () => {
     socket.emit("message", { data: JSON.stringify({ type: "done" }) });
 
     await waitFor(() => {
-      expect(document.querySelector(".status-line")).toHaveTextContent(/estado:\s*done/i);
+      expect(document.querySelector(".status-line")).toHaveTextContent(/estado:\s*finalizada/i);
     });
 
     // RF-026: el panel explicativo aparece una vez que hay snapshots.
@@ -431,7 +431,7 @@ describe("<App />", () => {
     });
     expect(await screen.findByText(/saved-a/)).toBeInTheDocument();
     await waitFor(() => {
-      expect(document.querySelectorAll(".status-line")[0]).toHaveTextContent(/estado:\s*done/i);
+      expect(document.querySelectorAll(".status-line")[0]).toHaveTextContent(/estado:\s*finalizada/i);
     });
   });
 

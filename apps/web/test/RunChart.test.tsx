@@ -1,6 +1,12 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import RunChart, { DEFAULT_HIDDEN_KEYS, buildSeriesList, resolveChartMargin, toChartRows } from "../src/components/RunChart";
+import RunChart, {
+  DEFAULT_HIDDEN_KEYS,
+  buildSeriesList,
+  hasVisibleClimateSeries,
+  resolveChartMargin,
+  toChartRows,
+} from "../src/components/RunChart";
 import type { GenerationSnapshot } from "../src/lib/camevo-client";
 import { getCatastropheGenerations } from "../src/lib/catastrophe";
 
@@ -89,6 +95,11 @@ describe("<RunChart /> — nota de la leyenda de eventos catastróficos (RF-015)
     const { container } = render(<RunChart snapshots={snapshots} />);
     expect(container.textContent).toMatch(/pasá el mouse sobre el gráfico para ver los valores/i);
   });
+
+  it("con las series por defecto visibles NO muestra el aviso de 'activá al menos una línea'", () => {
+    const { container } = render(<RunChart snapshots={[snapshot({ generation: 0 })]} />);
+    expect(container.textContent).not.toMatch(/activá al menos una línea/i);
+  });
 });
 
 /**
@@ -124,22 +135,63 @@ describe("buildSeriesList + DEFAULT_HIDDEN_KEYS (Mejora 2: estado inicial de la 
  * jsdom; acá se cubre la lógica pura que decide el margen derecho, que
  * es la parte que puede desincronizarse en silencio del eje.
  */
-describe("resolveChartMargin — el margen derecho sigue al eje de población", () => {
-  it("con 'Población viva' visible, reserva 60px a la derecha para la segunda columna de ticks", () => {
-    const hiddenKeys = new Set(["AND", "NOT", "OR", "geneticDiversity"]);
-    expect(resolveChartMargin(hiddenKeys).right).toBe(60);
+describe("resolveChartMargin — el margen derecho sigue a los ejes que realmente se renderizan", () => {
+  const CLIMATE = ["AND", "NOT", "OR"];
+
+  it("con ambos ejes derechos visibles (Población + al menos un clima), reserva 60px", () => {
+    expect(resolveChartMargin(new Set(["geneticDiversity"]), CLIMATE).right).toBe(60);
   });
 
-  it("con 'Población viva' oculta, vuelve a 30px — sin el eje, esos 60px dejarían una franja vacía", () => {
-    const hiddenKeys = new Set(["AND", "NOT", "OR", "geneticDiversity", "populationSize"]);
-    expect(resolveChartMargin(hiddenKeys).right).toBe(30);
+  it("estado inicial real (clima oculto por defecto, Población visible): un solo eje derecho → 30px", () => {
+    // Antes del fix esto daba 60 y el eje "Clima" se dibujaba igual, sin
+    // ninguna línea que lo usara — en la PRIMERA pantalla que ve todo
+    // visitante, porque DEFAULT_HIDDEN_KEYS oculta las tres climáticas.
+    expect(resolveChartMargin(new Set(DEFAULT_HIDDEN_KEYS), CLIMATE).right).toBe(30);
   });
 
-  it("solo cambia `right`: top/left/bottom son idénticos en ambos estados", () => {
-    const withAxis = resolveChartMargin(new Set<string>());
-    const withoutAxis = resolveChartMargin(new Set(["populationSize"]));
-    expect(withoutAxis.top).toBe(withAxis.top);
-    expect(withoutAxis.left).toBe(withAxis.left);
-    expect(withoutAxis.bottom).toBe(withAxis.bottom);
+  it("con 'Población viva' oculta pero clima visible, sigue habiendo un eje derecho → 30px", () => {
+    expect(resolveChartMargin(new Set(["populationSize", "geneticDiversity"]), CLIMATE).right).toBe(30);
+  });
+
+  it("sin ningún eje derecho, se mantiene el piso de 30px para no recortar la última etiqueta del eje X", () => {
+    expect(resolveChartMargin(new Set([...DEFAULT_HIDDEN_KEYS, "populationSize", "averageFitness"]), CLIMATE).right).toBe(30);
+  });
+
+  it("una corrida sin módulo climático no tiene claves climáticas: el eje no cuenta aunque no estén en hiddenKeys", () => {
+    expect(resolveChartMargin(new Set<string>(), []).right).toBe(30);
+  });
+
+  it("solo cambia `right`: top/left/bottom son idénticos en todos los estados", () => {
+    const a = resolveChartMargin(new Set<string>(), CLIMATE);
+    const b = resolveChartMargin(new Set(["populationSize", ...CLIMATE]), CLIMATE);
+    expect(b.top).toBe(a.top);
+    expect(b.left).toBe(a.left);
+    expect(b.bottom).toBe(a.bottom);
+  });
+});
+
+/**
+ * Los ids de tarea climática salen de DEFAULT_TASKS (backend) vía los
+ * snapshots, no de una lista fija en el frontend — por eso la condición
+ * recibe las claves reales en vez de asumir ["AND","NOT","OR"].
+ */
+describe("hasVisibleClimateSeries — la condición del eje 'Clima' usa claves dinámicas", () => {
+  it("es falsa cuando TODAS las series climáticas presentes están ocultas", () => {
+    expect(hasVisibleClimateSeries(new Set(["AND", "NOT", "OR"]), ["AND", "NOT", "OR"])).toBe(false);
+  });
+
+  it("basta con una visible para que el eje exista", () => {
+    expect(hasVisibleClimateSeries(new Set(["AND", "OR"]), ["AND", "NOT", "OR"])).toBe(true);
+  });
+
+  it("sin claves climáticas (corrida sin clima) es falsa, sin importar hiddenKeys", () => {
+    expect(hasVisibleClimateSeries(new Set<string>(), [])).toBe(false);
+  });
+
+  it("una tarea NUEVA en DEFAULT_TASKS cuenta para su propio eje — lo que una lista fija AND/NOT/OR se perdería", () => {
+    // Con AND/NOT/OR ocultas y solo XOR visible, hardcodear las tres
+    // originales habría quitado el eje dejando la línea de XOR apuntando
+    // a un eje inexistente: el bug que este patrón evita.
+    expect(hasVisibleClimateSeries(new Set(["AND", "NOT", "OR"]), ["AND", "NOT", "OR", "XOR"])).toBe(true);
   });
 });

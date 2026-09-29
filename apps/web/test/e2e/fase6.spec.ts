@@ -48,7 +48,7 @@ test("una corrida rápida que termina en extinción muestra la cita del IPCC AR6
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
 
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
 
   await expect(page.getByText(/se extinguió en la generación/i)).toBeVisible();
   await expect(page.getByText(/3% y el 14%/)).toBeVisible();

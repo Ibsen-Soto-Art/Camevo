@@ -24,7 +24,7 @@ async function runShortSimulation(page: Page, generations = 8): Promise<void> {
   await page.goto("/");
   await page.getByLabel("Generaciones").fill(String(generations));
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 20_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 20_000 });
 }
 
 test.describe("Grupo 2 (rediseño visual): tokens de diseño aplicados", () => {
@@ -96,8 +96,8 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole("button", { name: "Iniciar ambas corridas" }).click();
 
       const statusLines = page.locator(".status-line");
-      await expect(statusLines.first()).toContainText("done", { timeout: 20_000 });
-      await expect(statusLines.nth(1)).toContainText("done", { timeout: 20_000 });
+      await expect(statusLines.first()).toContainText("finalizada", { timeout: 20_000 });
+      await expect(statusLines.nth(1)).toContainText("finalizada", { timeout: 20_000 });
 
       expect(await page.locator(".run-panel").count()).toBe(2);
       expect(await hasHorizontalOverflow(page)).toBe(false);
@@ -113,7 +113,7 @@ for (const viewport of VIEWPORTS) {
       expect(await hasHorizontalOverflow(page)).toBe(false);
 
       await page.getByLabel(/corrida guardada a/i).selectOption({ index: 1 });
-      await expect(page.locator(".run-panel").first().locator(".status-line")).toContainText("done", { timeout: 10_000 });
+      await expect(page.locator(".run-panel").first().locator(".status-line")).toContainText("finalizada", { timeout: 10_000 });
       expect(await hasHorizontalOverflow(page)).toBe(false);
     });
   });

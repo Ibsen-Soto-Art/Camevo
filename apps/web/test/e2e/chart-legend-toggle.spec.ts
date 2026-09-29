@@ -12,7 +12,7 @@ async function runWithClimate(page: import("@playwright/test").Page) {
   await page.goto("/");
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
-  await expect(page.locator(".status-line")).toContainText("done", { timeout: 30_000 });
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 30_000 });
   await page.waitForFunction(() => document.querySelectorAll(".chart-legend-item").length >= 6, { timeout: 15_000 });
 }
 
@@ -109,4 +109,95 @@ test("click en un ítem visible lo oculta: pasa a opacidad reducida y desaparece
   await expect(page.locator(".chart-hover-panel")).not.toContainText("Fitness promedio");
   // Población sigue visible — ocultar una línea no afecta a las demás.
   await expect(page.locator(".chart-hover-panel")).toContainText("Población viva");
+});
+
+test("el eje Y de clima aparece/desaparece con sus series — y por defecto NO está, porque están ocultas", async ({ page }) => {
+  /*
+   * Auditoría exploratoria: el fix del eje de población (v0.20.1) no se
+   * había aplicado al de clima, así que la PRIMERA pantalla mostraba un
+   * eje "Clima" con escala numérica y ninguna línea que lo usara — las
+   * tres series climáticas están en DEFAULT_HIDDEN_KEYS.
+   */
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+  page.on("pageerror", (err) => consoleErrors.push(String(err)));
+
+  await runWithClimate(page);
+
+  const chart = page.locator(".chart-container").first();
+  const climateAxisLabel = chart.locator("text", { hasText: "Clima" });
+  const plotWidth = async () =>
+    (await chart.locator(".recharts-cartesian-grid-horizontal line").first().boundingBox())!.width;
+
+  // Estado inicial: clima oculto ⇒ sin eje "Clima".
+  await expect(climateAxisLabel).toHaveCount(0);
+  const widthWithoutClimate = await plotWidth();
+
+  // Activar UNA sola serie climática ya hace aparecer el eje.
+  await legendItem(page, "Clima: AND").click();
+  await expect(climateAxisLabel).toBeVisible();
+  const widthWithClimate = await plotWidth();
+  expect(widthWithoutClimate - widthWithClimate).toBeGreaterThan(20);
+
+  // Activar las otras dos no agrega un segundo eje: comparten `yAxisId`.
+  await legendItem(page, "Clima: NOT").click();
+  await legendItem(page, "Clima: OR").click();
+  await expect(climateAxisLabel).toHaveCount(1);
+  expect(await plotWidth()).toBeCloseTo(widthWithClimate, 0);
+
+  // Ocultar las tres lo vuelve a quitar, y el área recupera su ancho.
+  await legendItem(page, "Clima: AND").click();
+  await legendItem(page, "Clima: NOT").click();
+  await expect(climateAxisLabel).toHaveCount(1); // todavía queda OR visible
+  await legendItem(page, "Clima: OR").click();
+  await expect(climateAxisLabel).toHaveCount(0);
+  expect(await plotWidth()).toBeCloseTo(widthWithoutClimate, 0);
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("con TODAS las series ocultas el panel invita a reactivar una, y el foco queda en el último ítem", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); });
+  page.on("pageerror", (err) => consoleErrors.push(String(err)));
+
+  await runWithClimate(page);
+
+  // Ocultar las dos visibles por defecto deja el gráfico sin ninguna serie.
+  await legendItem(page, "Fitness promedio").click();
+  await legendItem(page, "Población viva").click();
+
+  await expect(page.locator(".chart-hover-panel")).toContainText("Activá al menos una línea en la leyenda");
+  await expect(page.locator(".chart-hover-panel")).not.toContainText(/Generación \d+/);
+
+  // El foco se conserva en el ítem recién alternado: sin esto quedaba en
+  // <body> y la siguiente pulsación de Espacio scrolleaba la página.
+  const focusedKey = await page.evaluate(() => document.activeElement?.getAttribute("data-series-key") ?? null);
+  expect(focusedKey).toBe("populationSize");
+
+  // Y desde ahí se puede reactivar con el teclado, sin volver a tabular.
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await page.keyboard.press(" ");
+  await expect(page.locator(".chart-hover-panel")).not.toContainText("Activá al menos una línea");
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("encadenar toggles con el teclado: Enter y Espacio alternan series sucesivas sin perder el foco", async ({ page }) => {
+  await runWithClimate(page);
+
+  const fitness = legendItem(page, "Fitness promedio");
+  await fitness.focus();
+  expect(await opacityOf(fitness)).toBeCloseTo(1, 1);
+
+  await page.keyboard.press("Enter");
+  expect(await opacityOf(fitness)).toBeCloseTo(0.3, 1);
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("data-series-key") ?? null)).toBe("averageFitness");
+
+  await page.keyboard.press(" ");
+  expect(await opacityOf(fitness)).toBeCloseTo(1, 1);
+
+  await page.keyboard.press("Enter");
+  expect(await opacityOf(fitness)).toBeCloseTo(0.3, 1);
 });
