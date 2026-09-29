@@ -1,6 +1,6 @@
 import type { PersistedRunConfig } from "@camevo/shared-types";
 import { describe, expect, it } from "vitest";
-import { buildSimulationConfig, parseCreateRunRequest } from "../../src/api/rest/config-request";
+import { buildSimulationConfig, getCatastropheConfig, parseCreateRunRequest } from "../../src/api/rest/config-request";
 
 /**
  * Pedido explícito antes de implementar: POST /runs (persistencia) y
@@ -61,28 +61,79 @@ describe("buildSimulationConfig", () => {
     expect(config.catastrophe).toBeUndefined();
   });
 
-  it("RF-014/RF-015 solo se activan en velocidad 'fast' — 'slow'/'moderate' quedan exactamente como la Fase 3 las validó", () => {
-    // Decisión tomada tras medir el efecto (ver config-request.ts): aplicar
-    // escasez de pool incluso suave a slow/moderate alteraba de forma
-    // significativa el fitness ya validado y cerrado en la Fase 3.
+  it("RF-014 (escasez de pool) sigue siendo exclusivo de 'fast' — slow/moderate quedan como la Fase 3 los validó", () => {
+    // Esta mitad de la decisión de la Fase 4 NO cambió: aplicar escasez de
+    // pool incluso suave a slow/moderate alteraba de forma significativa el
+    // fitness ya validado y cerrado en la Fase 3 (ver config-request.ts).
     const slow = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "slow", updates: 1000 }));
     const moderate = buildSimulationConfig(
       samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "moderate", updates: 1000 }),
     );
     const fast = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "fast", updates: 1000 }));
 
-    expect(slow.catastrophe).toBeUndefined();
     expect(slow.climate?.resourcePool).toBeUndefined();
-    expect(moderate.catastrophe).toBeUndefined();
     expect(moderate.climate?.resourcePool).toBeUndefined();
-
-    expect(fast.catastrophe).toEqual({ intervalGenerations: 10, severity: 0.9 });
     expect(fast.climate?.resourcePool).toEqual({ minMultiplier: 0.01, maxMultiplier: 0.1 });
   });
 
+  it("RF-015 ya NO es exclusivo de 'fast': con catastropheEnabled hay catástrofes en las tres velocidades, con intensidad proporcional", () => {
+    const configFor = (climateChangeSpeed: PersistedRunConfig["climateChangeSpeed"]) =>
+      buildSimulationConfig(
+        samplePersistedConfig({ climateEnabled: true, climateChangeSpeed, catastropheEnabled: true, updates: 1000 }),
+      );
+
+    expect(configFor("slow").catastrophe).toEqual({ intervalGenerations: 150, severity: 0.15 });
+    expect(configFor("moderate").catastrophe).toEqual({ intervalGenerations: 60, severity: 0.15 });
+    // "fast" conserva exactamente los valores de la Fase 4: son los que dan
+    // extinción consistente junto con FAST_RESOURCE_POOL.
+    expect(configFor("fast").catastrophe).toEqual({ intervalGenerations: 10, severity: 0.9 });
+  });
+
+  it("la intensidad crece con la velocidad: estrictamente más frecuentes, y nunca menos severas", () => {
+    /*
+     * La FRECUENCIA es la escalera real (150 → 60 → 10). La severidad no
+     * crece de slow a moderate: las dos usan 0.15, decidido tras medir.
+     * Subir la severidad de "moderate" resultaba en una selección mucho
+     * más fuerte por velocidad de replicación (fitness tardío/temprano
+     * saltaba a ≈3.7 con 0.25, ≈10 con 0.60) y el escenario "punto de
+     * quiebre" pasaba a leerse como éxito rotundo — ver el comentario de
+     * getCatastropheConfig. Lo que distingue a "moderate" de "slow" es
+     * que los eventos llegan 2.5 veces más seguido, no que peguen más
+     * fuerte.
+     */
+    const config = (climateChangeSpeed: PersistedRunConfig["climateChangeSpeed"]) =>
+      getCatastropheConfig(climateChangeSpeed);
+
+    expect(config("slow").intervalGenerations).toBeGreaterThan(config("moderate").intervalGenerations);
+    expect(config("moderate").intervalGenerations).toBeGreaterThan(config("fast").intervalGenerations);
+
+    expect(config("moderate").severity).toBeGreaterThanOrEqual(config("slow").severity);
+    expect(config("fast").severity).toBeGreaterThan(config("moderate").severity);
+  });
+
+  it("con catastropheEnabled en false no hay catástrofes en NINGUNA velocidad, ni siquiera en 'fast'", () => {
+    for (const climateChangeSpeed of ["slow", "moderate", "fast"] as const) {
+      const config = buildSimulationConfig(
+        samplePersistedConfig({ climateEnabled: true, climateChangeSpeed, catastropheEnabled: false, updates: 1000 }),
+      );
+      expect(config.catastrophe, climateChangeSpeed).toBeUndefined();
+    }
+  });
+
+  it("sin clima activo no hay catástrofes aunque catastropheEnabled sea true — son una dimensión del módulo climático", () => {
+    const config = buildSimulationConfig(
+      samplePersistedConfig({ climateEnabled: false, catastropheEnabled: true, climateChangeSpeed: "fast" }),
+    );
+    expect(config.catastrophe).toBeUndefined();
+  });
+
   it("el intervalo de catástrofe de 'fast' es absoluto, no escala con updates (medido: escalarlo rompía la extinción consistente)", () => {
-    const short = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "fast", updates: 1500 }));
-    const long = buildSimulationConfig(samplePersistedConfig({ climateEnabled: true, climateChangeSpeed: "fast", updates: 3000 }));
+    const short = buildSimulationConfig(
+      samplePersistedConfig({ climateEnabled: true, catastropheEnabled: true, climateChangeSpeed: "fast", updates: 1500 }),
+    );
+    const long = buildSimulationConfig(
+      samplePersistedConfig({ climateEnabled: true, catastropheEnabled: true, climateChangeSpeed: "fast", updates: 3000 }),
+    );
 
     expect(short.catastrophe?.intervalGenerations).toBe(long.catastrophe?.intervalGenerations);
   });

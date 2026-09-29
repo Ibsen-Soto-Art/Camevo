@@ -1,6 +1,6 @@
 # CAMEVO — Especificación de Requisitos
 
-**Versión 1.5 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.6 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` para no funcionales. Prioridad: **M** (Must — MVP), **S** (Should — fase 2/3), **C** (Could — fase 4+).
 
@@ -46,6 +46,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 > **Nota de trazabilidad:** RF-016 y RF-017 se evaluaron y se decidió excluirlos explícitamente del alcance del proyecto (fragmentación de hábitat y gradiente espacial/migración). Se conservan sus IDs en esta tabla para dejar constancia de la decisión, no se reutilizan. RF-015 (eventos catastróficos) fue reincorporado al alcance tras revisión.
 
 > **Nota de visibilidad (RF-024):** RF-015 estuvo completo a nivel de motor desde el cierre de la Fase 4 — el evento catastrófico ya ocurría, pero antes de esta ronda no había ninguna forma de distinguirlo a simple vista de un clima que simplemente se puso desfavorable de forma gradual (RF-011). Al construir la grilla poblacional (RF-024) se agregó `catastropheOccurred` al snapshot y marcadores visuales en la gráfica (línea de referencia) y en la grilla (destello de borde de un solo cuadro) — ver `CHANGELOG.md` v0.13.0. No cambia el cumplimiento del requisito, que ya era completo.
+
+> **Nota de alcance (actualización, `CHANGELOG.md` v0.21.0):** RF-015 dejó de estar restringido a la velocidad climática "Rápida". Los eventos catastróficos son ahora una dimensión propia y configurable por el usuario (`catastropheEnabled`, activa por defecto con el módulo climático encendido), presente en las **tres** velocidades. El "porcentaje configurable" que pide este requisito no se expone como número crudo (RNF-004): la intensidad se deriva de la velocidad climática en `getCatastropheConfig` (`apps/api/src/api/rest/config-request.ts`), con escala proporcional medida empíricamente — Lenta: cada 150 generaciones, 15%; Moderada: cada 60 generaciones, 15%; Rápida: cada 10 generaciones, 90%. Solo "Rápida" produce extinción (5/5 semillas); las otras dos son perturbaciones recuperables (0/5). RF-014 (reducción del pool de CPU) **sigue siendo exclusivo de "Rápida"** — esa mitad de la decisión de la Fase 4 no cambió.
 
 ### 1.3 Visualización y control de usuario
 

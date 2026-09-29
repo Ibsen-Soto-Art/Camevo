@@ -89,8 +89,18 @@ test.describe("Mejora 1: activación táctil real en mobile", () => {
     const wrapper = page.locator(".chart-container .recharts-wrapper").first();
     await wrapper.scrollIntoViewIfNeeded();
     const box = (await wrapper.boundingBox())!;
+    /*
+     * Las X se toman del área de TRAZADO (la grilla cartesiana ocupa
+     * exactamente ese rectángulo), no del wrapper: medido en este mismo
+     * repo que un wrapper de 554px puede contener un área de líneas de
+     * ~294px, así que "80% del wrapper" cae más allá del último dato y el
+     * segundo toque no cambia de generación. Con datos distintos el ancho
+     * de los ticks del eje Y cambia, y con él el punto exacto donde eso
+     * pasa — de ahí que fallara de forma intermitente y no siempre.
+     */
+    const plot = (await page.locator(".chart-container .recharts-cartesian-grid-horizontal line").first().boundingBox())!;
 
-    await page.touchscreen.tap(box.x + box.width * 0.2, box.y + box.height * 0.5);
+    await page.touchscreen.tap(plot.x + plot.width * 0.1, box.y + box.height * 0.5);
     await expect(page.locator(".chart-hover-panel")).toContainText(/Generación \d+/, { timeout: 5_000 });
     const textAfterFirstTap = await page.locator(".chart-hover-panel").textContent();
 
@@ -99,7 +109,7 @@ test.describe("Mejora 1: activación táctil real en mobile", () => {
     expect(await page.locator(".chart-hover-panel").textContent()).toBe(textAfterFirstTap);
 
     // Un segundo toque, bien separado en X, sí actualiza el panel a otra generación.
-    await page.touchscreen.tap(box.x + box.width * 0.8, box.y + box.height * 0.5);
+    await page.touchscreen.tap(plot.x + plot.width * 0.9, box.y + box.height * 0.5);
     await page.waitForTimeout(300);
     expect(await page.locator(".chart-hover-panel").textContent()).not.toBe(textAfterFirstTap);
   });

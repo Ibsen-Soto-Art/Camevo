@@ -116,6 +116,17 @@ export interface CreateRunRequest {
   /** Fase 6. Default "synthetic" — ver ClimateTrendSource. */
   readonly climateTrendSource?: ClimateTrendSource;
   /**
+   * RF-015: si la corrida tiene eventos catastróficos periódicos. Default
+   * `true`. Solo tiene efecto con `climateEnabled: true` — es una
+   * dimensión del módulo climático, no un mecanismo independiente.
+   *
+   * La INTENSIDAD no se elige acá: se deriva de `climateChangeSpeed` en
+   * el servidor (ver getCatastropheConfig en api/rest/config-request.ts),
+   * para que el usuario no tenga que entender qué significa una
+   * severidad de 0.4 antes de poder empezar una corrida (RNF-004).
+   */
+  readonly catastropheEnabled?: boolean;
+  /**
    * RF-023: ritmo inicial de reproducción (ms entre snapshots
    * transmitidos), ajustable después en curso vía `ControlMessage`
    * ("setSpeed"). Puramente de presentación — nunca entra al fingerprint

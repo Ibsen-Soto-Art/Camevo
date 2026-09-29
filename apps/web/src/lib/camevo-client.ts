@@ -37,6 +37,7 @@ export type RunFormValues = Required<
     | "climateChangeSpeed"
     | "climateVarianceAmplitude"
     | "climateTrendSource"
+    | "catastropheEnabled"
     | "msPerGeneration"
   >
 >;

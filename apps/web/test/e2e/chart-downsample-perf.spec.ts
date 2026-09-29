@@ -28,19 +28,22 @@ import { DOWNSAMPLE_TARGET } from "../../src/lib/downsample";
  *    mediciones, así que el número absoluto está inflado pero la
  *    comparación antes/después es válida.
  *
- * Nota sobre eventos catastróficos: NO aparecen en esta corrida, y no es
- * una omisión del test. Solo se configuran con `climateChangeSpeed ===
- * "fast"` (apps/api/src/api/rest/config-request.ts, donde se arma
- * `catastrophe`), y esa velocidad además usa `FAST_RESOURCE_POOL`, que
- * extingue la población alrededor de la generación 60 — medido: una
- * primera versión de este test con el preset "Cambio climático
- * acelerado" dibujó 61 puntos, no 1500. O sea: hoy no existe, vía UI,
- * una corrida que sea larga Y tenga catástrofes. El anclaje forzado de
- * esas generaciones se verifica entonces sobre la función pura
- * (test/downsample.test.ts), que es donde vive esa garantía.
+ * Sobre los eventos catastróficos: hasta que RF-015 pasó a ser una
+ * dimensión propia (checkbox `catastropheEnabled`, intensidad
+ * proporcional a la velocidad), no existía vía UI una corrida que fuera
+ * larga Y tuviera catástrofes — se configuraban solo con
+ * `climateChangeSpeed === "fast"`, que además usa `FAST_RESOURCE_POOL` y
+ * extingue la población alrededor de la generación 60 (medido: una
+ * primera versión de este test con ese preset dibujó 61 puntos, no
+ * 1500). Con el preset lento las catástrofes ahora son ocasionales
+ * (cada 150 generaciones, 15%) y la corrida llega igual a 1500, así que
+ * el anclaje forzado del submuestreo SÍ se puede verificar en navegador
+ * real — ver el segundo test de este archivo.
  */
 const GENERATIONS = 1500;
 const HOVER_SAMPLES = 15;
+
+const CATASTROPHE_INTERVAL_SLOW = 150;
 
 interface ChartMetrics {
   readonly longtaskTotalMs: number;
@@ -181,4 +184,45 @@ test("rendimiento del gráfico con una corrida guardada de 1500 generaciones", a
   expect(metrics.renderedPoints, "una corrida de 1500 generaciones no debe dibujar más de DOWNSAMPLE_TARGET puntos").toBeLessThanOrEqual(
     DOWNSAMPLE_TARGET,
   );
+});
+
+test("el submuestreo conserva TODAS las generaciones catastróficas, verificado en navegador real", async ({ page }) => {
+  /*
+   * La garantía de qué puntos sobreviven al LTTB vive en la función pura
+   * (test/downsample.test.ts), pero lo que importa de verdad es que los
+   * marcadores de RF-015 se sigan DIBUJANDO: el eje X es categórico, así
+   * que una `<ReferenceLine>` sobre una generación que no quedó en los
+   * datos simplemente no aparece — no falla ruidosamente. Con 1500
+   * generaciones reducidas a 300 puntos, este test es la única
+   * comprobación de punta a punta de que eso no pasa.
+   */
+  test.setTimeout(300_000);
+
+  await saveLongRun(page);
+  await page.getByLabel("Modo").selectOption("saved-compare");
+  const selectA = page.getByLabel(/corrida guardada a/i);
+  const runId = await selectA.locator("option").nth(1).getAttribute("value");
+  await selectA.selectOption(runId!);
+  await page.waitForSelector(".chart-container .recharts-line path", { timeout: 60_000 });
+
+  const chart = page.locator(".chart-container").first();
+  const renderedPoints = await page.evaluate(() => {
+    const path = document.querySelector(".chart-container .recharts-line path");
+    return ((path?.getAttribute("d") ?? "").match(/[MLC]/g) ?? []).length;
+  });
+  const referenceLines = await chart.locator(".recharts-reference-line").count();
+
+  // El preset lento dispara una catástrofe cada 150 generaciones; con 1500
+  // son 9 (las generaciones 150, 300, ... 1350 — la 0 no cuenta, y la 1500
+  // queda fuera porque la corrida termina en la 1499).
+  const expectedCatastrophes = Math.floor((1500 - 1) / CATASTROPHE_INTERVAL_SLOW);
+  expect(expectedCatastrophes).toBe(9);
+
+  console.log(`[anclaje] puntos dibujados ${renderedPoints} · ReferenceLine ${referenceLines} · esperadas ${expectedCatastrophes}`);
+
+  // Submuestreo activo Y marcadores intactos: es la combinación que el
+  // anclaje forzado tiene que garantizar.
+  expect(renderedPoints).toBeLessThanOrEqual(DOWNSAMPLE_TARGET);
+  expect(referenceLines).toBe(expectedCatastrophes);
+  await expect(chart.getByText(/evento catastrófico/i)).toBeVisible();
 });

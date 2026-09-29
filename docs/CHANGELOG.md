@@ -6,6 +6,62 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.21.0] — Eventos catastróficos configurables en todas las velocidades climáticas
+
+**Documentos afectados:** `02-requisitos.md` (v1.5 → v1.6 — RF-015 amplía su alcance a las
+tres velocidades, con escala proporcional documentada).
+
+### Added
+- Checkbox "Eventos catastróficos" siempre visible en el formulario (antes solo implícito
+  en velocidad Rápida). Default activo con clima encendido, deshabilitado sin clima.
+- `getCatastropheConfig(speed)` con escala proporcional medida empíricamente (5 semillas,
+  1500 generaciones, 20×20):
+  - Lenta: cada 150 generaciones, 15% eliminado — 9 eventos, ratio late/early 1.41,
+    0/5 extinciones.
+  - Moderada: cada 60 generaciones, 15% eliminado — 24 eventos, ratio late/early 1.53,
+    0/5 extinciones.
+  - Rápida: cada 10 generaciones, 90% eliminado — sin cambio respecto a v0.10.0 (cierre de
+    la Fase 4, donde se fijaron esos valores); 5/5 extinciones entre generaciones 21-41.
+- Verificación e2e de anclaje LTTB ahora posible: con Lenta a intervalo 150, una corrida de
+  1500 generaciones produce 9 catástrofes y las 9 sobreviven al submuestreo (300 puntos ·
+  9 ReferenceLine). Hasta ahora no existía, vía UI, una corrida que fuera larga Y tuviera
+  catástrofes — ver la limitación declarada en v0.20.2.
+
+### Changed
+- La suba del ratio en Moderada con catástrofes (~1.53 vs ~1.02 sin ellas) es selección
+  genuina por velocidad de replicación, no un artefacto: las catástrofes liberan celdas y
+  los replicadores más rápidos las ocupan. Los nacimientos por generación crecen ~3.6×; la
+  población promedio no varía (393.9 → 400.0 con y sin catástrofes).
+- La población se rellena dentro de la misma generación en Lenta y Moderada (la catástrofe
+  ocurre antes del ciclo de reproducción): el marcador visual principal es la línea
+  vertical roja y el destello ámbar, no la curva de población. Nota: esto corrigió también
+  la entrada v0.19.0 del CHANGELOG, donde la descripción de la caída de población era
+  cierta en Rápida pero prácticamente falsa en las otras dos velocidades.
+- Narrativas de "¿Puede la vida adaptarse?" y "El punto de quiebre" actualizadas para
+  mencionar los eventos catastróficos con tono proporcional a su intensidad en cada
+  velocidad.
+- Corrección de la narrativa de "Cambio climático acelerado": describía un borde rojo
+  perimetral eliminado en v0.15.1.
+- La severidad de Moderada quedó en 15% y no más alta tras medirlo: a 25% el ratio sube a
+  1.53 → 3.71 y a 60% a 10.4, siempre con 0/5 extinciones. Subirla no hace el escenario más
+  peligroso, lo hace más selectivo — y un "punto de quiebre" cuyo gráfico de fitness se
+  dispara se lee como éxito rotundo, lo contrario de lo que ese escenario enseña. Lo que
+  distingue a Moderada de Lenta es la frecuencia (2.5× más eventos), no la severidad.
+- `testTimeout` en `vitest.config.ts` (apps/api) subido a 20s con justificación medida: con
+  catástrofes activas por defecto el motor hace bastante más trabajo por generación y el
+  tiempo total de tests de apps/api pasó de 46.7s a 78.9s (~1.7×). Con eso
+  `tasks-reward.test.ts` llegaba a 5.3s bajo carga y expiraba contra el límite anterior de
+  5s, sin estar roto. La fragilidad era preexistente (ese test ya usaba el 64% del
+  presupuesto), pero este cambio la destapó.
+
+### Motivo
+Separar "velocidad del cambio climático" de "presencia de eventos extremos" como dos
+dimensiones independientes, tal como los describe el IPCC: no son lo mismo, aunque estén
+relacionados. Permite comparar exactamente qué hace el cambio climático rápido solo vs.
+combinado con eventos extremos.
+
+---
+
 ## [v0.20.3] — Cursor e indicador condicionales en la grilla poblacional
 
 **Documentos afectados:** ninguno — RF-027 mantiene el mismo alcance declarado en v0.16.0
@@ -179,9 +235,16 @@ GenerationSnapshot desde la Fase 2; este cambio solo lo visualiza.
 - Tercer eje Y en RunChart (derecho, teal #2dd4bf) mostrando el número
   de organismos vivos generación a generación — "Población viva" en la
   leyenda.
-- El efecto de los eventos catastróficos (RF-015) ahora es doblemente
-  visible: la línea vertical roja punteada ya existente + la caída abrupta
-  de la curva de población inmediatamente después de cada evento.
+- El efecto de los eventos catastróficos (RF-015) queda más visible en la
+  curva de población. **Corrección posterior, tras medirlo:** la
+  caída de población es claramente visible en velocidad Rápida; en Lenta y
+  Moderada la población se rellena casi inmediatamente dentro de la misma
+  generación, por lo que el marcador visual principal de las catástrofes es
+  la línea vertical roja en la gráfica y el destello ámbar en la grilla, no
+  la curva de población. La afirmación original de esta entrada ("la caída
+  abrupta de la curva de población inmediatamente después de cada evento")
+  era cierta para la única velocidad que tenía catástrofes en ese momento
+  —Rápida— y dejó de serlo al extenderse RF-015 a las tres.
 - Tooltip pedagógico: descripción en lenguaje llano conectando RF-015
   (caída abrupta) con RF-011 (caída gradual por clima), para que el
   usuario distinga los dos mecanismos.

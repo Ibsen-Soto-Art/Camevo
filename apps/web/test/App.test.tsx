@@ -246,6 +246,96 @@ describe("<App />", () => {
     expect(JSON.parse(options.body as string)).toMatchObject({ climateChangeSpeed: "fast", climateEnabled: true });
   });
 
+  /**
+   * RF-015: los eventos catastróficos dejaron de ser un efecto lateral de
+   * la velocidad "Rápida" para ser una dimensión propia del módulo
+   * climático — visible y activable en las tres velocidades, con la
+   * intensidad derivada de la velocidad en el servidor.
+   */
+  describe("RF-015: checkbox de eventos catastróficos", () => {
+    async function startAndReadBody(fetchMock: ReturnType<typeof vi.fn>) {
+      await userEvent.click(screen.getByRole("button", { name: "Iniciar corrida" }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      return JSON.parse(options.body as string) as Record<string, unknown>;
+    }
+
+    function stubFetch() {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ runId: "run-cat" }) });
+      vi.stubGlobal("fetch", fetchMock);
+      return fetchMock;
+    }
+
+    it("está visible y marcado por defecto", () => {
+      render(<App />);
+      expect(screen.getByRole("checkbox", { name: /eventos catastróficos/i })).toBeChecked();
+    });
+
+    it.each(["slow", "moderate", "fast"])(
+      "sigue visible y marcado en la velocidad '%s' — ya no es exclusivo de Rápida",
+      async (speed) => {
+        render(<App />);
+        await userEvent.selectOptions(screen.getByLabelText("Velocidad del cambio climático"), speed);
+        expect(screen.getByRole("checkbox", { name: /eventos catastróficos/i })).toBeChecked();
+      },
+    );
+
+    it("marcado: manda catastropheEnabled true en el body de POST /runs", async () => {
+      const fetchMock = stubFetch();
+      render(<App />);
+      expect(await startAndReadBody(fetchMock)).toMatchObject({ catastropheEnabled: true });
+    });
+
+    it("desmarcado: manda catastropheEnabled false, incluso en velocidad Rápida", async () => {
+      const fetchMock = stubFetch();
+      render(<App />);
+      await userEvent.selectOptions(screen.getByLabelText("Velocidad del cambio climático"), "fast");
+      await userEvent.click(screen.getByRole("checkbox", { name: /eventos catastróficos/i }));
+      expect(await startAndReadBody(fetchMock)).toMatchObject({ catastropheEnabled: false, climateChangeSpeed: "fast" });
+    });
+
+    it("la nota de intensidad cambia con la velocidad: el usuario elige SI, no cuánto", async () => {
+      render(<App />);
+      await userEvent.selectOptions(screen.getByLabelText("Velocidad del cambio climático"), "slow");
+      expect(screen.getByText(/cada ~150 generaciones/i)).toBeInTheDocument();
+
+      await userEvent.selectOptions(screen.getByLabelText("Velocidad del cambio climático"), "moderate");
+      expect(screen.getByText(/cada ~60 generaciones/i)).toBeInTheDocument();
+
+      await userEvent.selectOptions(screen.getByLabelText("Velocidad del cambio climático"), "fast");
+      expect(screen.getByText(/cada ~10 generaciones/i)).toBeInTheDocument();
+    });
+
+    it("al desmarcar, la nota de intensidad desaparece", async () => {
+      render(<App />);
+      await userEvent.click(screen.getByRole("checkbox", { name: /eventos catastróficos/i }));
+      expect(screen.queryByText(/cada ~\d+ generaciones/i)).not.toBeInTheDocument();
+    });
+
+    it("sin módulo climático, el checkbox queda deshabilitado — las catástrofes son parte del clima", async () => {
+      render(<App />);
+      await userEvent.click(screen.getByRole("checkbox", { name: /módulo climático activo/i }));
+      expect(screen.getByRole("checkbox", { name: /eventos catastróficos/i })).toBeDisabled();
+    });
+
+    it.each([
+      ["¿Puede la vida adaptarse?", "slow"],
+      ["Cambio climático acelerado", "fast"],
+      ["El punto de quiebre", "moderate"],
+    ])("el preset '%s' deja el checkbox marcado", async (presetName, expectedSpeed) => {
+      const fetchMock = stubFetch();
+      render(<App />);
+      await userEvent.click(screen.getByRole("button", { name: presetName }));
+      // El preset colapsa el formulario: hay que reabrirlo para ver el control.
+      await userEvent.click(screen.getByText("Configuración de la corrida"));
+      expect(screen.getByRole("checkbox", { name: /eventos catastróficos/i })).toBeChecked();
+      expect(await startAndReadBody(fetchMock)).toMatchObject({
+        catastropheEnabled: true,
+        climateChangeSpeed: expectedSpeed,
+      });
+    });
+  });
+
   it("modo comparación: arranca dos corridas con velocidades distintas y muestra dos paneles (RF-025)", async () => {
     const fetchMock = vi
       .fn()

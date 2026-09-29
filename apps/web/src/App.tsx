@@ -101,6 +101,9 @@ const SCENARIOS: readonly Scenario[] = [
     name: "¿Puede la vida adaptarse?",
     narrative:
       "Vas a ver una población de organismos digitales enfrentar un cambio climático LENTO: el entorno cambia, pero da tiempo. " +
+      "Cada tanto ocurre además un evento extremo —una sequía, una ola de calor— que se lleva a una parte de la población: " +
+      "vas a verlo como una línea vertical en el gráfico y un destello ámbar sobre la grilla. A este ritmo son ocasionales y " +
+      "la población los absorbe sin mayor problema. " +
       "Prestá atención al gráfico de fitness — si sube con las generaciones, eso es rescate evolutivo: la selección natural " +
       "encontró, dentro de la variación genética que la población ya tenía, a los mejor adaptados al nuevo clima.",
     speed: "slow",
@@ -115,8 +118,10 @@ const SCENARIOS: readonly Scenario[] = [
     // ANTES de que arranque la corrida qué buscar y dónde.
     narrative:
       "Misma población, mismas reglas — pero ahora el clima cambia RÁPIDO Y además ocurren eventos extremos periódicos " +
-      "(equivalentes a olas de calor o sequías masivas): vas a verlos como líneas verticales en el gráfico y un destello de " +
-      "borde rojo alrededor de la grilla. El fitness deja de mejorar y, en algún punto, la población entra en deuda de " +
+      "(equivalentes a olas de calor o sequías masivas): vas a verlos como líneas verticales en el gráfico y un destello " +
+      "ámbar sobre toda la grilla. Acá son frecuentes y devastadores —cada ~10 generaciones se lleva a casi toda la " +
+      "población— y llegan sin tiempo de recuperarse entre uno y otro. " +
+      "El fitness deja de mejorar y, en algún punto, la población entra en deuda de " +
       "extinción (se debilita generación tras generación) hasta colapsar. No es que la selección natural 'falle': es que no " +
       "le da tiempo de actuar antes de que el entorno vuelva a cambiar.",
     speed: "fast",
@@ -127,7 +132,9 @@ const SCENARIOS: readonly Scenario[] = [
     name: "El punto de quiebre",
     narrative:
       "Esta es la velocidad más interesante: ni tan lenta como para garantizar adaptación, ni tan rápida como para garantizar " +
-      "colapso. Es el punto donde el resultado depende de la suerte de esta corrida en particular — probá iniciarla varias " +
+      "colapso. Los eventos extremos también están en el medio: cada ~60 generaciones muere alrededor del 15% de la " +
+      "población, que vuelve a llenar la grilla enseguida — más seguidos que con un clima lento, pero absorbibles. " +
+      "Es el punto donde el resultado depende de la suerte de esta corrida en particular — probá iniciarla varias " +
       "veces y vas a ver que no siempre termina igual. Esa incertidumbre no es un defecto del simulador: es real.",
     speed: "moderate",
     reproducibilityMode: "experimental",
@@ -143,19 +150,40 @@ const SCENARIOS: readonly Scenario[] = [
  */
 const DEFAULT_NUM_ANCESTORS = 1;
 
+/**
+ * RNF-004: el usuario elige SI hay catástrofes, no su tamaño — pero sin
+ * ninguna señal de qué cambia entre velocidades, "Eventos catastróficos"
+ * sería una casilla sin consecuencia visible. Estos textos traducen los
+ * valores reales de getCatastropheConfig (150/0.15, 40/0.40, 10/0.90) a
+ * la escala que importa: cada cuánto y cuánto se pierde.
+ */
+const CATASTROPHE_INTENSITY_NOTE: Record<ClimateChangeSpeed, string> = {
+  slow: "Con cambio climático lento son eventos ocasionales y leves: cada ~150 generaciones muere alrededor del 15% de la población, que se recupera sin mayor problema.",
+  moderate:
+    "Con cambio climático moderado son más seguidos: cada ~60 generaciones muere alrededor del 15% de la población, que vuelve a llenar la grilla en pocas generaciones.",
+  fast: "Con cambio climático rápido son frecuentes y devastadores: cada ~10 generaciones muere alrededor del 90% de la población, sin tiempo real de recuperarse entre uno y otro.",
+};
+
 const SPEED_OPTIONS: { value: ClimateChangeSpeed; label: string }[] = [
   { value: "slow", label: "Lenta" },
   { value: "moderate", label: "Moderada" },
   { value: "fast", label: "Rápida" },
 ];
 
-function toRunFormValues(base: BaseFormValues, climateChangeSpeed: ClimateChangeSpeed, climateEnabled: boolean): RunFormValues {
-  return { ...base, climateEnabled, climateChangeSpeed };
+function toRunFormValues(
+  base: BaseFormValues,
+  climateChangeSpeed: ClimateChangeSpeed,
+  climateEnabled: boolean,
+  catastropheEnabled: boolean,
+): RunFormValues {
+  return { ...base, climateEnabled, climateChangeSpeed, catastropheEnabled };
 }
 
 export default function App() {
   const [base, setBase] = useState<BaseFormValues>(DEFAULT_BASE_FORM);
   const [climateEnabled, setClimateEnabled] = useState(true);
+  /* RF-015: ahora una dimensión propia, activa por defecto en las tres velocidades. */
+  const [catastropheEnabled, setCatastropheEnabled] = useState(true);
   const [mode, setMode] = useState<Mode>("single");
   const [speedSingle, setSpeedSingle] = useState<ClimateChangeSpeed>("moderate");
   const [speedA, setSpeedA] = useState<ClimateChangeSpeed>("slow");
@@ -167,6 +195,9 @@ export default function App() {
     setBase({ ...base, reproducibilityMode: scenario.reproducibilityMode });
     setSpeedSingle(scenario.speed);
     setClimateEnabled(true);
+    // Los tres escenarios usan clima activo, así que los tres quedan con
+    // catástrofes — a la intensidad que corresponda a su velocidad.
+    setCatastropheEnabled(true);
     setSelectedScenarioId(scenario.id);
   }
 
@@ -209,11 +240,16 @@ export default function App() {
     event.preventDefault();
     if (mode === "live-compare") {
       await Promise.all([
-        runA.start(toRunFormValues(base, speedA, true)),
-        runB.start(toRunFormValues(base, speedB, true)),
+        // El modo comparación no expone controles de clima (ver el bloque
+        // `mode === "single"` del formulario): igual que `climateEnabled`,
+        // las catástrofes quedan fijas en true acá, así que A y B difieren
+        // SOLO en la velocidad — que es el punto de la comparación, y
+        // ahora también hace visible la escala de intensidad.
+        runA.start(toRunFormValues(base, speedA, true, true)),
+        runB.start(toRunFormValues(base, speedB, true, true)),
       ]);
     } else if (mode === "single") {
-      await runSingle.start(toRunFormValues(base, speedSingle, climateEnabled));
+      await runSingle.start(toRunFormValues(base, speedSingle, climateEnabled, catastropheEnabled));
     }
   }
 
@@ -498,6 +534,29 @@ export default function App() {
                         ))}
                       </select>
                     </label>
+                    {/*
+                      RF-015: va DESPUÉS del select de velocidad a
+                      propósito — su intensidad la define esa velocidad
+                      (getCatastropheConfig en el backend), así que se lee
+                      en el orden en que se decide. Visible en las tres
+                      velocidades: dejó de ser un efecto lateral de
+                      "Rápida" para ser una dimensión propia.
+                    */}
+                    <label className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={catastropheEnabled}
+                        onChange={(e) => {
+                          setCatastropheEnabled(e.target.checked);
+                          setSelectedScenarioId(null);
+                        }}
+                        disabled={!climateEnabled}
+                      />
+                      Eventos catastróficos
+                    </label>
+                    {climateEnabled && catastropheEnabled && (
+                      <p className="form-note">{CATASTROPHE_INTENSITY_NOTE[speedSingle]}</p>
+                    )}
                     <label>
                       Fuente de la tendencia climática
                       <select

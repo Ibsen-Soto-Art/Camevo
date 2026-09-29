@@ -52,6 +52,7 @@ const DEFAULTS = {
   climateChangeSpeed: "moderate" as ClimateChangeSpeed,
   climateVarianceAmplitude: 0.15,
   climateTrendSource: "synthetic" as ClimateTrendSource,
+  catastropheEnabled: true,
   msPerGeneration: 80,
 };
 
@@ -137,6 +138,10 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
   const climateChangeSpeed = (body.climateChangeSpeed as ClimateChangeSpeed | undefined) ?? DEFAULTS.climateChangeSpeed;
   const climateVarianceAmplitude = (body.climateVarianceAmplitude as number | undefined) ?? DEFAULTS.climateVarianceAmplitude;
   const climateTrendSource = (body.climateTrendSource as ClimateTrendSource | undefined) ?? DEFAULTS.climateTrendSource;
+  // Las corridas guardadas ANTES de que existiera este campo no lo traen
+  // en su JSONB: `?? DEFAULTS` les da `true`, que es el comportamiento
+  // que tenían de hecho en "fast" y el que tendrían hoy por defecto.
+  const catastropheEnabled = (body.catastropheEnabled as boolean | undefined) ?? DEFAULTS.catastropheEnabled;
   const msPerGeneration = (body.msPerGeneration as number | undefined) ?? DEFAULTS.msPerGeneration;
 
   if (numAncestors > gridWidth * gridHeight) {
@@ -160,6 +165,14 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
     climateChangeSpeed,
     climateVarianceAmplitude,
     climateTrendSource,
+    // A diferencia de msPerGeneration, esto SÍ cambia el resultado de la
+    // simulación, así que dos corridas que difieran solo en esto no son
+    // la misma corrida y no deben compartir semilla (RNF-003). Agregar la
+    // clave corre el hash de TODA configuración: las semillas
+    // reproducibles anteriores a este cambio no se reproducen con los
+    // mismos parámetros (las corridas ya guardadas no se ven afectadas,
+    // guardan su semilla junto al resto de su config).
+    catastropheEnabled,
   });
   const seed = resolveSeed(reproducibilityMode, fingerprint);
 
@@ -177,6 +190,7 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
     climateChangeSpeed,
     climateVarianceAmplitude,
     climateTrendSource,
+    catastropheEnabled,
     msPerGeneration,
     seed,
   };
@@ -199,6 +213,30 @@ export function parseCreateRunRequest(body: CreateRunRequestBody): ParseResult {
  * (sube), moderada ⇒ ≈ 1.01-1.03 (estable), rápida ⇒ ≈ 0.98-1.00
  * (estancada/leve declive) — ver el reporte de cierre de la Fase 3 para
  * los números completos.
+ *
+ * Esos números siguen siendo los de una corrida SIN eventos
+ * catastróficos. Desde que RF-015 pasó a ser activable en las tres
+ * velocidades (default: activo), la misma medición con catástrofes da,
+ * 5 semillas, 1500 generaciones, 20x20:
+ *
+ *   lenta    1.37-1.91 (mediana 1.41), 0/5 extinciones, 9 eventos
+ *   moderada 1.32-1.64 (mediana 1.53), 0/5 extinciones, 24 eventos
+ *   rápida   0.00-1.44 (mediana 0.10), 5/5 extinciones entre gen 21 y 41
+ *
+ * Qué significa esa suba, medido y no supuesto: NO es un artefacto del
+ * denominador. Separando los términos de `averageFitness`
+ * (= births / populationSize) en una corrida moderada, la población es
+ * idéntica con y sin catástrofes (393.9 → 400.0 en ambos casos) y lo que
+ * crece es el numerador — los nacimientos por generación pasan de
+ * 489→508 (x1.04) sin catástrofes a 568→2034 (x3.58) con ellas a
+ * severidad 0.25. Cada evento libera celdas al azar y las ocupan los
+ * replicadores más rápidos, así que la corrida selecciona por velocidad
+ * de replicación generación tras generación. Es selección real, y la
+ * métrica la reporta bien.
+ *
+ * Por eso la severidad de "moderada" quedó en 0.15 y no más alta (ver
+ * getCatastropheConfig): a 0.25 la mediana sube a 3.71 y a 0.60 a 10.4,
+ * siempre con 0/5 extinciones — más selectivo, no más peligroso.
  */
 const CLIMATE_CHANGE_SPEED_RATIOS: Record<ClimateChangeSpeed, number> = {
   slow: 8 / 3,
@@ -223,17 +261,24 @@ function climateChangeSpeedToPeriod(speed: ClimateChangeSpeed, updates: number):
 const CLIMATE_MAX_MULTIPLIER = 16;
 
 /**
- * RF-014/RF-015 solo se activan en velocidad "fast" — decisión tomada
- * tras medir el efecto en las tres velocidades: aplicar incluso una
- * escasez de pool suave a "slow"/"moderate" alteraba de forma
+ * RF-014 (escasez de pool) sigue siendo exclusivo de "fast" — decisión
+ * tomada tras medir el efecto en las tres velocidades: aplicar incluso
+ * una escasez de pool suave a "slow"/"moderate" alteraba de forma
  * significativa el fitness tardío/temprano que la Fase 3 ya había
  * validado y cerrado (v0.9.0/v0.9.1) — "slow" pasaba de ≈1.25 (sube) a
  * ≈1.0 (plano), y "moderate" de ≈1.02 (estable) a ≈3-4.6 (sube mucho,
- * un efecto lateral no buscado). En vez de forzar una recalibración de
- * "slow"/"moderate" solo para acomodar RF-014, se las deja EXACTAMENTE
- * como la Fase 3 las validó, y los mecanismos nuevos de la Fase 4 son
- * exclusivos de "fast" — la única velocidad que de verdad necesita
- * demostrar colapso.
+ * un efecto lateral no buscado).
+ *
+ * RF-015 (eventos catastróficos) ya NO sigue esa regla: pasó a ser una
+ * dimensión propia, activable por el usuario en cualquier velocidad, con
+ * intensidad proporcional (ver getCatastropheConfig). Importante para no
+ * confundir las dos cosas: la medición de arriba es sobre el POOL, no
+ * sobre las catástrofes — y el aislamiento de mecanismos de la Fase 4
+ * (test/simulation/collapse-mechanism-isolation.test.ts) midió que las
+ * catástrofes SOLAS, incluso al ajuste más agresivo (interval=10,
+ * severity=0.9) y con el pool normal, no extinguen la población en 1500
+ * generaciones. Son un mecanismo de perturbación recuperable, no de
+ * colapso; el colapso de "fast" lo produce la combinación con el pool.
  *
  * Los valores de abajo son ABSOLUTOS (no una razón sobre `updates`,
  * a diferencia de `CLIMATE_CHANGE_SPEED_RATIOS`): medido empíricamente
@@ -271,8 +316,41 @@ function buildClimateConfig(persisted: PersistedRunConfig): ClimatePolicyConfig 
   };
 }
 
-function buildCatastropheConfig(): CatastropheConfig {
-  return FAST_CATASTROPHE;
+/**
+ * RF-015: intensidad proporcional a la velocidad del cambio climático.
+ * El usuario elige SI hay catástrofes (`catastropheEnabled`), no de qué
+ * tamaño — traducir "severidad 0.4" a una expectativa concreta requiere
+ * saber cómo funciona el motor, que es justo lo que RNF-004 no puede
+ * asumir.
+ *
+ * La escalera real es la FRECUENCIA (150 → 60 → 10 generaciones).
+ * "slow" y "moderate" comparten severidad (0.15) a propósito, no por
+ * descuido: medido con 5 semillas sobre 1500 generaciones, subir la
+ * severidad de "moderate" no hace el escenario más duro, lo hace más
+ * SELECTIVO — cada evento libera celdas que ocupan los replicadores más
+ * rápidos, y el fitness tardío/temprano se dispara (≈1.53 con 0.15,
+ * ≈3.7 con 0.25, ≈10.4 con 0.60) sin que la población corra más riesgo
+ * de extinguirse (0/5 en todos los casos). Un "punto de quiebre" cuyo
+ * gráfico de fitness sube 4x se lee como éxito rotundo, que es lo
+ * contrario de lo que ese escenario enseña. Lo que distingue a
+ * "moderate" es que los eventos llegan 2.5 veces más seguido.
+ *
+ * "fast" es el único que sube la severidad, y ahí el salto sí es a
+ * colapso: junto con FAST_RESOURCE_POOL extingue 5/5 semillas.
+ *
+ * "fast" conserva exactamente los valores de la Fase 4 (10 / 0.9): son
+ * los que dan extinción consistente 10/10 semillas junto con
+ * FAST_RESOURCE_POOL, medidos, y cambiarlos invalidaría ese cierre.
+ */
+export function getCatastropheConfig(speed: ClimateChangeSpeed): CatastropheConfig {
+  switch (speed) {
+    case "slow":
+      return { intervalGenerations: 150, severity: 0.15 };
+    case "moderate":
+      return { intervalGenerations: 60, severity: 0.15 };
+    case "fast":
+      return FAST_CATASTROPHE;
+  }
 }
 
 function buildQuasiExtinctionConfig(): QuasiExtinctionConfig {
@@ -326,8 +404,8 @@ export function buildSimulationConfig(persisted: PersistedRunConfig): Simulation
     seed: persisted.seed,
     quasiExtinction: buildQuasiExtinctionConfig(),
     ...(persisted.climateEnabled ? { climate: buildClimateConfig(persisted) } : {}),
-    ...(persisted.climateEnabled && persisted.climateChangeSpeed === "fast"
-      ? { catastrophe: buildCatastropheConfig() }
+    ...(persisted.climateEnabled && persisted.catastropheEnabled
+      ? { catastrophe: getCatastropheConfig(persisted.climateChangeSpeed) }
       : {}),
   };
 }
