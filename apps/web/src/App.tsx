@@ -480,12 +480,19 @@ export default function App() {
                   <input
                     type="number"
                     min={0}
+                    // Debe coincidir con CLIMATE_VARIANCE_AMPLITUDE_MAX en
+                    // apps/api/src/api/rest/config-request.ts — verificado por test.
                     max={0.5}
                     step={0.01}
                     value={base.climateVarianceAmplitude}
                     onChange={(e) => setBase({ ...base, climateVarianceAmplitude: Number(e.target.value) })}
                   />
                 </label>
+                <p className="form-note">
+                  Controla cuánto oscila el clima alrededor de su tendencia. Valores muy altos tienen efecto
+                  decreciente: el multiplicador queda topado en sus extremos una fracción creciente del tiempo (~18% con
+                  el valor por defecto 0.15, ~33% con el máximo 0.5).
+                </p>
                 <label>
                   Ritmo de reproducción inicial (ms/generación)
                   <input

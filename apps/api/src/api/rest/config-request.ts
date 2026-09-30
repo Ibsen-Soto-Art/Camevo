@@ -21,6 +21,31 @@ interface NumericLimit {
   readonly max: number;
 }
 
+/**
+ * Techo empírico: con amplitud > 0.5 más del 33% de las generaciones
+ * quedan saturadas en los extremos del multiplicador climático (clamp a
+ * min/max), reduciendo la variabilidad real del parámetro sin aumentar su
+ * rango útil. El clamp en policy.ts protege contra valores fuera de
+ * [min, max] para cualquier amplitud.
+ *
+ * Medido sobre 1500 generaciones con los límites reales de los recursos
+ * por tarea (min 1, max 16): saturación 10.4% con amplitud 0.05, 18.1%
+ * con el default 0.15, 22.7% con 0.25, y 32.9% con 0.5 — la media apenas
+ * se mueve (8.80 → 8.60), así que lo que crece no es la variabilidad sino
+ * el tiempo clavado en los topes.
+ *
+ * Conceptualmente es hermana de CLIMATE_MAX_MULTIPLIER (más abajo) y
+ * debería vivir a su lado, pero no puede: `LIMITS` se evalúa antes en el
+ * módulo, y referenciar desde acá una `const` declarada después da
+ * ReferenceError por zona muerta temporal (verificado, no supuesto).
+ *
+ * El formulario web duplica este número como literal, porque
+ * @camevo/shared-types no tiene punto de entrada de runtime y no puede
+ * exportar valores — la duplicación la vigila
+ * apps/web/test/climate-variance-limit.test.tsx.
+ */
+export const CLIMATE_VARIANCE_AMPLITUDE_MAX = 0.5;
+
 /** RNF-008: valores fuera de rango podrían colgar el servidor (grillas o corridas enormes). */
 const LIMITS: readonly NumericLimit[] = [
   { field: "gridWidth", min: 2, max: 40 },
@@ -30,7 +55,7 @@ const LIMITS: readonly NumericLimit[] = [
   { field: "updates", min: 1, max: 5000 },
   { field: "ancestorGenomeLength", min: 1, max: 200 },
   { field: "numAncestors", min: 1, max: 20 },
-  { field: "climateVarianceAmplitude", min: 0, max: 0.5 },
+  { field: "climateVarianceAmplitude", min: 0, max: CLIMATE_VARIANCE_AMPLITUDE_MAX },
   // RF-023: puramente de presentación (ver comentario en shared-types),
   // pero igual se valida por RNF-008 — un valor negativo rompería
   // setTimeout, uno absurdamente alto (además de inútil) mantendría el
