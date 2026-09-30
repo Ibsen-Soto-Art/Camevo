@@ -6,6 +6,47 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.21.2] — CLIMATE_VARIANCE_AMPLITUDE_MAX documentada y verificada
+
+**Documentos afectados:** ninguno — el criterio del techo queda en el código, donde se
+puede verificar; `02-requisitos.md` no habla de límites numéricos de este parámetro.
+
+### Changed
+- `CLIMATE_VARIANCE_AMPLITUDE_MAX = 0.5` extraída como constante exportada en
+  `config-request.ts`, junto a la validación y encima de `LIMITS` — no junto a
+  `CLIMATE_MAX_MULTIPLIER` como se había pedido originalmente, porque `LIMITS` se evalúa
+  antes y referenciar una `const` declarada más abajo daría `ReferenceError` por zona
+  muerta temporal.
+- El comentario de la constante documenta el criterio empírico con los datos medidos: a
+  amplitud 0.5 el 32.9% de las generaciones quedan saturadas en los extremos del
+  multiplicador, sin aumentar la variabilidad real (la media del multiplicador pasa de 8.80
+  a 8.60). El comentario anterior (`RNF-008: "podrían colgar el servidor"`) no aplicaba a
+  este campo — el `clamp` de `policy.ts` protege para cualquier amplitud; el 0.5 es una
+  decisión de producto, no una guardia de seguridad.
+- El literal en `App.tsx` queda como está pero con un comentario que cita la fuente y
+  menciona el test de deriva.
+- Nota nueva debajo del input de Intensidad/varianza climática con los números medidos:
+  "~18% con el valor por defecto 0.15, ~33% con el máximo 0.5".
+
+### Added
+- Test de deriva entre paquetes (`climate-variance-limit.test.tsx`): lee
+  `CLIMATE_VARIANCE_AMPLITUDE_MAX` de la fuente del backend con regex y compara contra el
+  atributo `max` real del input renderizado (no un segundo regex sobre el JSX, que pasaría
+  en verde si el número se mueve a una variable). El test incluye el comentario obligatorio
+  explicando por qué cruza paquetes: `shared-types` no puede exportar valores sin un punto
+  de entrada de runtime — medido y descartado: typechea en verde y rompe con
+  `ERR_PACKAGE_PATH_NOT_EXPORTED` bajo `tsx` y `vite build`.
+
+### Fixed
+- `tsconfig.test.json` de `apps/web` no declaraba `"node"` en `types`, así que `node:fs` y
+  `node:path` no resolvían bajo `tsc -b` (que sí incluye `test/`). El build de la imagen
+  falló en el primer intento de deploy; producción no sufrió downtime porque el build falla
+  antes de reemplazar imágenes. La causa de fondo: `tsc --noEmit -p apps/web` no cubre
+  `test/` (resuelve solo `tsconfig.json`, que tiene `"files": []`); de ahora en más el
+  chequeo de web es `npm run build`.
+
+---
+
 ## [v0.21.1] — Correcciones de auditoría exploratoria
 
 **Documentos afectados:** ninguno.
