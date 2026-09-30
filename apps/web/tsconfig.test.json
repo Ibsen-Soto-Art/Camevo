@@ -12,7 +12,11 @@
     "jsx": "react-jsx",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["vite/client"],
+    // Los tests corren en Node (vitest), no en el navegador: algunos leen
+    // archivos del monorepo con node:fs/node:path — ver
+    // test/climate-variance-limit.test.tsx. Mismo criterio que
+    // tsconfig.node.json para los archivos de configuración.
+    "types": ["vite/client", "node"],
 
     "strict": true,
     "noUnusedLocals": true,
