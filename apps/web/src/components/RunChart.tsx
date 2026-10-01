@@ -19,6 +19,9 @@ import type { GenerationSnapshot } from "../lib/camevo-client";
 /** dataKey de la serie de población — el eje `yAxisId="population"` solo existe mientras esta serie esté visible. */
 const POPULATION_KEY = "populationSize";
 
+/** Clave de fila SIN serie asociada: alimenta la línea de catástrofe del panel de valores, no una `<Line>`. */
+export const CATASTROPHE_DEATHS_KEY = "catastropheDeaths";
+
 /**
  * Ancho que Recharts necesita por cada columna de ticks a la derecha.
  * "Clima" y "Población" son los dos ejes `orientation="right"` y se
@@ -91,6 +94,19 @@ export function toChartRows(snapshots: readonly GenerationSnapshot[]): Record<st
       averageFitness: snapshot.averageFitness,
       geneticDiversity: snapshot.geneticDiversity,
       populationSize: snapshot.populationSize,
+      /*
+       * `?? 0` porque las corridas guardadas antes de v0.21.x no tienen
+       * este campo en su JSONB: al cargarlas por GET /runs/:id llega
+       * `undefined` donde el tipo declara `number`. 0 es el valor correcto
+       * para ellas — no se sabe cuántos murieron, y "0" hace que el panel
+       * no muestre la línea de catástrofe en vez de mostrar "murieron
+       * undefined organismos".
+       *
+       * Agregar esta clave a la fila NO crea una serie en el gráfico: las
+       * series salen de `buildSeriesList`, y Recharts solo dibuja las
+       * claves referenciadas por un `<Line dataKey>`.
+       */
+      [CATASTROPHE_DEATHS_KEY]: snapshot.catastropheDeaths ?? 0,
     };
     for (const resource of snapshot.climate) {
       row[resource.taskId] = resource.rewardMultiplier;
@@ -529,6 +545,20 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
         ) : hoveredRow ? (
           <div className="chart-values-panel">
             <p className="chart-values-generation">Generación {hoveredRow.generation}</p>
+            {/*
+              RF-015: en Lenta y Moderada la catástrofe ocurre antes del
+              ciclo de reproducción de la misma generación, así que la
+              grilla se rellena y la curva de población queda plana — las
+              líneas verticales rojas parecían no tener consecuencia. La
+              segunda oración existe por eso: el número solo dice QUÉ pasó,
+              y la duda real del usuario es por qué no lo ve en la curva.
+            */}
+            {(hoveredRow[CATASTROPHE_DEATHS_KEY] ?? 0) > 0 && (
+              <p className="chart-values-catastrophe">
+                ⚡ Catástrofe: murieron {hoveredRow[CATASTROPHE_DEATHS_KEY]} organismos. La población se rellenó en la
+                misma generación, así que la curva no baja.
+              </p>
+            )}
             {(() => {
               const primary = visibleSeries.filter((s) => s.dataKey === "averageFitness" || s.dataKey === "populationSize");
               const climate = visibleSeries.filter((s) => s.yAxisId === "climate");

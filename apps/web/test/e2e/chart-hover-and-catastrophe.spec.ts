@@ -158,3 +158,89 @@ test("Ajuste 4: al menos 8px de separación entre la leyenda, el label \"Generac
   expect(hoverPanelBox.y - (xAxisLabelBox.y + xAxisLabelBox.height), "label Generación → panel de hover").toBeGreaterThanOrEqual(8);
   expect(firstCaptionBox.y - (hoverPanelBox.y + hoverPanelBox.height), "panel de hover → nota de análisis").toBeGreaterThanOrEqual(8);
 });
+
+test("RF-015: al pasar el mouse sobre una generación catastrófica, el panel dice cuántos murieron y por qué la curva no baja", async ({
+  page,
+}) => {
+  /*
+   * El caso que motivó el cambio: en velocidad Moderada la catástrofe
+   * ocurre ANTES del ciclo de reproducción de la misma generación, la
+   * grilla se rellena y la curva de población queda plana en 400 — así que
+   * las líneas verticales rojas parecían no tener consecuencia. Solo
+   * verificable en navegador real: el panel se llena por hover sobre el
+   * SVG, que jsdom no monta.
+   */
+  test.setTimeout(180_000);
+  await page.goto("/");
+  // Moderada (default) con catástrofes cada 60 generaciones: con 300
+  // generaciones hay 4 eventos, y la corrida no se extingue.
+  await page.getByLabel("Generaciones").fill("300");
+  await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
+  await page.getByRole("button", { name: "Iniciar corrida" }).click();
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 60_000 });
+
+  const chart = page.locator(".chart-container").first();
+  const referenceLines = chart.locator(".recharts-reference-line");
+  expect(await referenceLines.count()).toBeGreaterThan(0);
+
+  const wrapper = page.locator(".chart-container .recharts-wrapper").first();
+  await wrapper.scrollIntoViewIfNeeded();
+  const wbox = (await wrapper.boundingBox())!;
+
+  /*
+   * La posición se toma de la propia `ReferenceLine`, no barriendo el
+   * gráfico: con 300 generaciones y un área de ~500px, un barrido de pasos
+   * fijos puede saltar por encima de las 4 generaciones con evento (el
+   * hover se ajusta al punto más cercano). Medido: un barrido de 41 pasos
+   * pasaba en aislamiento y fallaba en la suite completa, donde el ancho
+   * del área cambia. La línea de referencia está dibujada exactamente en la
+   * generación catastrófica, así que es la coordenada correcta por
+   * construcción.
+   */
+  const markerBox = (await referenceLines.first().locator("line").first().boundingBox())!;
+  let found: string | null = null;
+  for (const dx of [0, -1, 1, -2, 2, -3, 3]) {
+    await page.mouse.move(markerBox.x + markerBox.width / 2 + dx, wbox.y + wbox.height * 0.5);
+    await page.waitForTimeout(80);
+    const text = (await page.locator(".chart-hover-panel").textContent()) ?? "";
+    if (/Catástrofe: murieron \d+ organismos/.test(text)) {
+      found = text;
+      break;
+    }
+  }
+
+  expect(found, "el hover sobre la línea de referencia no mostró la línea de catástrofe").not.toBeNull();
+  expect(found).toMatch(/⚡ Catástrofe: murieron \d+ organismos\./);
+  expect(found).toContain("La población se rellenó en la misma generación, así que la curva no baja.");
+  // Y el número es real, no un 0 que se colara por el `?? 0`.
+  expect(Number(/murieron (\d+) organismos/.exec(found!)![1])).toBeGreaterThan(0);
+
+  // En una generación SIN evento la línea no aparece.
+  const generations = await page.evaluate(() => {
+    const panel = document.querySelector(".chart-hover-panel");
+    return panel?.textContent ?? "";
+  });
+  expect(generations).toBeTruthy();
+});
+
+test("RF-015: una corrida sin eventos catastróficos nunca muestra la línea de catástrofe en el panel", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto("/");
+  await page.getByRole("checkbox", { name: /eventos catastróficos/i }).uncheck();
+  await page.getByLabel("Generaciones").fill("300");
+  await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
+  await page.getByRole("button", { name: "Iniciar corrida" }).click();
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 60_000 });
+
+  const chart = page.locator(".chart-container").first();
+  await expect(chart.locator(".recharts-reference-line")).toHaveCount(0);
+
+  const wrapper = page.locator(".chart-container .recharts-wrapper").first();
+  await wrapper.scrollIntoViewIfNeeded();
+  const plot = (await chart.locator(".recharts-cartesian-grid-horizontal line").first().boundingBox())!;
+  const wbox = (await wrapper.boundingBox())!;
+  for (let i = 0; i <= 20; i++) {
+    await page.mouse.move(plot.x + (plot.width * i) / 20, wbox.y + wbox.height * 0.5);
+    await expect(page.locator(".chart-hover-panel")).not.toContainText("Catástrofe");
+  }
+});

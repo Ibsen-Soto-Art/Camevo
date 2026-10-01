@@ -16,6 +16,7 @@ function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
     extinct: false,
     nearExtinct: false,
     catastropheOccurred: false,
+    catastropheDeaths: 0,
     ...overrides,
   };
 }

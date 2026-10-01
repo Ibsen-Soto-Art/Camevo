@@ -450,6 +450,16 @@
   font-size: 0.95rem;
 }
 
+/* RF-015: ámbar, el mismo color con que la grilla marca el evento
+   (CATASTROPHE_OVERLAY_COLOR en PopulationGrid.tsx) — un solo lenguaje de
+   color para "hubo una catástrofe" en las dos representaciones. */
+.chart-values-catastrophe {
+  margin: 0 0 0.4rem;
+  color: #f59e0b;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
 .chart-values-row {
   margin: 0 0 0.3rem;
   display: flex;

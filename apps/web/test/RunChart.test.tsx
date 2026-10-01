@@ -1,6 +1,7 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import RunChart, {
+  CATASTROPHE_DEATHS_KEY,
   DEFAULT_HIDDEN_KEYS,
   buildSeriesList,
   hasVisibleClimateSeries,
@@ -23,6 +24,7 @@ function snapshot(overrides: Partial<GenerationSnapshot>): GenerationSnapshot {
     extinct: false,
     nearExtinct: false,
     catastropheOccurred: false,
+    catastropheDeaths: 0,
     ...overrides,
   };
 }
@@ -34,9 +36,11 @@ describe("toChartRows — incluye populationSize (línea 'Población viva')", ()
       snapshot({ generation: 1, populationSize: 42, averageFitness: 1.1, geneticDiversity: 0.12 }),
     ];
     const rows = toChartRows(snapshots);
+    // `toEqual` exhaustivo a propósito: si el aplanado gana una clave sin
+    // que nadie lo note, este test lo dice.
     expect(rows).toEqual([
-      { generation: 0, averageFitness: 1, geneticDiversity: 0.1, populationSize: 400 },
-      { generation: 1, averageFitness: 1.1, geneticDiversity: 0.12, populationSize: 42 },
+      { generation: 0, averageFitness: 1, geneticDiversity: 0.1, populationSize: 400, catastropheDeaths: 0 },
+      { generation: 1, averageFitness: 1.1, geneticDiversity: 0.12, populationSize: 42, catastropheDeaths: 0 },
     ]);
   });
 
@@ -48,6 +52,45 @@ describe("toChartRows — incluye populationSize (línea 'Población viva')", ()
     const rows = toChartRows(snapshots);
     expect(rows[0]?.populationSize).toBe(400);
     expect(rows[1]?.populationSize).toBe(40);
+  });
+});
+
+/**
+ * RF-015: `catastropheDeaths` tiene que sobrevivir al aplanado para que el
+ * panel de valores pueda mostrarlo — el flag `catastropheOccurred` NO
+ * sobrevive (no es un número), y por eso el panel no podía saber que hubo
+ * catástrofe antes de este cambio.
+ */
+describe("toChartRows — preserva catastropheDeaths (RF-015)", () => {
+  it("copia el conteo de muertes a la fila, y 0 en las generaciones sin evento", () => {
+    const rows = toChartRows([
+      snapshot({ generation: 0 }),
+      snapshot({ generation: 1, catastropheOccurred: true, catastropheDeaths: 60 }),
+      snapshot({ generation: 2 }),
+    ]);
+    expect(rows[0]?.[CATASTROPHE_DEATHS_KEY]).toBe(0);
+    expect(rows[1]?.[CATASTROPHE_DEATHS_KEY]).toBe(60);
+    expect(rows[2]?.[CATASTROPHE_DEATHS_KEY]).toBe(0);
+  });
+
+  it("compatibilidad: una corrida guardada antes de v0.21.x no trae el campo — se lee como 0, no undefined", () => {
+    // Así llega un snapshot del JSONB viejo: el tipo dice `number`, el dato
+    // no está. Sin el `?? 0` el panel mostraría "murieron undefined".
+    const legacy = { ...snapshot({ generation: 7 }) } as Record<string, unknown>;
+    delete legacy.catastropheDeaths;
+
+    const rows = toChartRows([legacy as unknown as GenerationSnapshot]);
+    expect(rows[0]?.[CATASTROPHE_DEATHS_KEY]).toBe(0);
+    expect(Number.isNaN(rows[0]?.[CATASTROPHE_DEATHS_KEY])).toBe(false);
+  });
+
+  it("la clave no crea una serie: sigue habiendo exactamente las series de buildSeriesList", () => {
+    // El riesgo concreto de meter una clave nueva en la fila sería que
+    // Recharts dibujara una línea de más. No puede: las series salen de
+    // buildSeriesList, no de las claves del dato.
+    const keys = buildSeriesList(["AND", "NOT", "OR"]).map((s) => s.dataKey);
+    expect(keys).not.toContain(CATASTROPHE_DEATHS_KEY);
+    expect(DEFAULT_HIDDEN_KEYS).not.toContain(CATASTROPHE_DEATHS_KEY);
   });
 });
 
@@ -94,6 +137,13 @@ describe("<RunChart /> — nota de la leyenda de eventos catastróficos (RF-015)
     const snapshots = [snapshot({ generation: 0 })];
     const { container } = render(<RunChart snapshots={snapshots} />);
     expect(container.textContent).toMatch(/pasá el mouse sobre el gráfico para ver los valores/i);
+  });
+
+  it("sin hover no muestra la línea de catástrofe, aunque la corrida tenga eventos", () => {
+    const { container } = render(
+      <RunChart snapshots={[snapshot({ generation: 1, catastropheOccurred: true, catastropheDeaths: 60 })]} />,
+    );
+    expect(container.textContent).not.toMatch(/murieron \d+ organismos/i);
   });
 
   it("con las series por defecto visibles NO muestra el aviso de 'activá al menos una línea'", () => {

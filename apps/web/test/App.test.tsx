@@ -401,6 +401,7 @@ describe("<App />", () => {
                   extinct: false,
                   nearExtinct: false,
                   catastropheOccurred: false,
+    catastropheDeaths: 0,
                 },
               ],
             }),

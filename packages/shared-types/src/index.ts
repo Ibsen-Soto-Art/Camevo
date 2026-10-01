@@ -74,6 +74,25 @@ export interface GenerationSnapshot {
    * gradualmente" (RF-011) de "hubo una catástrofe puntual" (RF-015).
    */
   readonly catastropheOccurred: boolean;
+  /**
+   * RF-015: cuántos organismos eliminó la catástrofe de ESTA generación, 0
+   * si no hubo. El motor ya lo calculaba (`applyCatastrophicEvent` lo
+   * devuelve) y el valor se descartaba; viaja porque el cliente no puede
+   * derivarlo — `severity` nunca cruza la frontera, y el `populationSize`
+   * del snapshot se mide DESPUÉS del ciclo de reproducción, con la grilla
+   * ya rellenada.
+   *
+   * Es el dato que vuelve visible la consecuencia del evento en las
+   * velocidades Lenta y Moderada, donde la curva de población queda plana
+   * (la catástrofe ocurre antes de la reproducción de la misma generación,
+   * ver orchestrator/run.ts) y las líneas verticales rojas parecían no
+   * tener efecto.
+   *
+   * Requerido a propósito, para que un snapshot nuevo no pueda omitirlo.
+   * Las corridas guardadas antes de v0.21.x no lo tienen en su JSONB: el
+   * frontend aplica `?? 0` en el punto de lectura.
+   */
+  readonly catastropheDeaths: number;
 }
 
 /** Mensajes que viaja por api/ws (`/runs/:id/stream`), servidor → cliente. */

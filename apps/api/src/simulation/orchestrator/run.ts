@@ -155,8 +155,13 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
   const catastropheOccurred = Boolean(
     config.catastrophe && generation > 0 && generation % config.catastrophe.intervalGenerations === 0,
   );
+  // El retorno de `applyCatastrophicEvent` (cuántos murieron) se descartaba
+  // desde la Fase 4; ahora viaja en el snapshot. Es el único dato que hace
+  // visible la consecuencia del evento cuando la grilla se rellena dentro
+  // de la misma generación y la curva de población no se mueve.
+  let catastropheDeaths = 0;
   if (catastropheOccurred && config.catastrophe) {
-    applyCatastrophicEvent(grid, config.catastrophe.severity, rng);
+    catastropheDeaths = applyCatastrophicEvent(grid, config.catastrophe.severity, rng);
   }
 
   const order = shuffledInPlace(grid.occupiedIndices(), rng);
@@ -233,6 +238,7 @@ export function advanceGeneration(state: SimulationState): GenerationSnapshot {
     extinct,
     nearExtinct,
     catastropheOccurred,
+    catastropheDeaths,
   };
 
   state.generation += 1;

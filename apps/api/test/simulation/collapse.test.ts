@@ -159,3 +159,54 @@ describe("Criterio secundario: cuasi-extinción sostenida (no absorbente)", () =
     expect(snapshots.every((s) => !s.nearExtinct)).toBe(true);
   });
 });
+
+/**
+ * RF-015: `catastropheDeaths` existe para que el frontend pueda mostrar la
+ * consecuencia del evento cuando la curva de población no la refleja — la
+ * catástrofe ocurre ANTES del ciclo de reproducción de la misma
+ * generación, así que la grilla se rellena antes de que se tome el
+ * snapshot. El número ya lo calculaba `applyCatastrophicEvent`; lo que
+ * cambió es que deja de descartarse.
+ */
+describe("RF-015: catastropheDeaths en el snapshot", () => {
+  it("coincide con round(población viva × severity) en la generación del evento", () => {
+    // Grilla 10x10 sembrada hasta llenarse antes del primer evento: con
+    // intervalo 20 y severidad 0.3, en la generación 20 deberían morir
+    // round(100 × 0.3) = 30.
+    const { snapshots } = runSimulation(
+      baseConfig({ updates: 21, catastrophe: { intervalGenerations: 20, severity: 0.3 } }),
+    );
+
+    const event = snapshots.find((s) => s.catastropheOccurred)!;
+    const previous = snapshots[snapshots.indexOf(event) - 1]!;
+    expect(event.generation).toBe(20);
+    expect(event.catastropheDeaths).toBe(Math.round(previous.populationSize * 0.3));
+    expect(event.catastropheDeaths).toBeGreaterThan(0);
+  });
+
+  it("escala con la severidad: el doble de severidad mata (aprox.) el doble", () => {
+    const deathsAt = (severity: number) => {
+      const { snapshots } = runSimulation(baseConfig({ updates: 21, catastrophe: { intervalGenerations: 20, severity } }));
+      return snapshots.find((s) => s.catastropheOccurred)!.catastropheDeaths;
+    };
+    const low = deathsAt(0.2);
+    const high = deathsAt(0.4);
+    expect(high).toBeGreaterThan(low);
+    expect(high / low).toBeCloseTo(2, 0);
+  });
+
+  it("es 0 en las generaciones SIN catástrofe, no undefined ni el valor del evento anterior", () => {
+    const { snapshots } = runSimulation(
+      baseConfig({ updates: 25, catastrophe: { intervalGenerations: 20, severity: 0.3 } }),
+    );
+    for (const s of snapshots) {
+      expect(typeof s.catastropheDeaths).toBe("number");
+      if (!s.catastropheOccurred) expect(s.catastropheDeaths).toBe(0);
+    }
+  });
+
+  it("sin catastrophe configurado es 0 en toda la corrida", () => {
+    const { snapshots } = runSimulation(baseConfig({ updates: 30 }));
+    expect(snapshots.every((s) => s.catastropheDeaths === 0)).toBe(true);
+  });
+});
