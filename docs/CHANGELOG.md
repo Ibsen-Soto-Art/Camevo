@@ -6,6 +6,51 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.23.1] — Terminología: "Éxito reproductivo" en la grilla
+
+**Documentos afectados:** ninguno — la nota de visibilidad de RF-015 en `02-requisitos.md`
+lleva tres capítulos y no se le suma un cuarto por un cambio de palabras.
+
+### Changed
+- Leyenda de la grilla: "Fitness bajo/alto (pocas/muchas crías)" → "Éxito reproductivo
+  bajo/alto (pocas/muchas crías)". El paréntesis explicativo se mantiene. El comentario en el
+  código registra por qué dejó de decir "fitness": en la misma generación, el fitness
+  instantáneo de la gráfica puede ser 1.88 mientras el éxito reproductivo acumulado del
+  veterano es 136 — el mismo término para dos métricas con dos órdenes de magnitud de
+  diferencia inducía a confusión.
+- Panel de click-to-inspect: "Produjo N crías" → "Éxito reproductivo: N crías producidas en
+  total". "En total" explicita el acumulado, que es lo que lo distingue de la tasa
+  instantánea de la gráfica.
+
+### Added
+- Caption nuevo debajo de la gráfica de líneas, primero en orden de lectura (antes de los de
+  diversidad genética y eventos catastróficos, que ya existían): define "Fitness promedio"
+  como tasa instantánea de nacimientos por organismo en esa generación, y advierte
+  explícitamente que no debe confundirse con el éxito reproductivo acumulado que muestra la
+  grilla. Se lee sin descubrir que hay que pasar el mouse — ventaja sobre el tooltip flotante
+  que reemplazó, que además tapaba las líneas del gráfico (v0.20.0).
+
+### Correcciones a premisas del diagnóstico previo
+- `FIXED_METRIC_DESCRIPTIONS` no existía: se creyó disponible para poner la descripción de
+  "Fitness promedio". Las descripciones por métrica se eliminaron en v0.20.0 junto con
+  `describeMetric` y `ChartTooltip`. La definición fue al caption, que es mejor ubicación.
+- El panel de inspección no decía "Fitness: N crías" sino "Produjo N crías" — era el único
+  lugar de la UI que ya evitaba el término. El cambio igualmente aplica: agrega "Éxito
+  reproductivo" (compartiendo vocabulario con la leyenda) y "en total" (explicitando el
+  acumulado).
+
+### Limitación conocida registrada
+El oscurecimiento sistemático de la grilla en corridas largas sigue sin resolverse: 77.5% de
+celdas verdes en la generación 50 → 5.5% en la generación 1499, en una corrida sana sin
+extinción. La causa es la dispersión del éxito reproductivo acumulado — el veterano con 1360
+crías fija el techo de la escala, y los cientos de organismos recién nacidos (éxito = 0)
+arrastran el promedio. `historicalMaxFitness` siempre coincide con el máximo entre vivos
+(ratio 1.00 en 8 generaciones muestreadas), así que el denominador no está obsoleto — es la
+naturaleza acumulativa de la métrica lo que abre el rango. El texto ya no miente; la escala
+de color todavía se lee como un juicio de salud de la población.
+
+---
+
 ## [v0.23.0] — Grilla sincronizada con el hover del gráfico
 
 **Documentos afectados:** `02-requisitos.md` (v1.7 → v1.8 — una oración en la nota de
