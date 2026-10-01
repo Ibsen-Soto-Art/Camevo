@@ -244,3 +244,99 @@ test("RF-015: una corrida sin eventos catastróficos nunca muestra la línea de 
     await expect(page.locator(".chart-hover-panel")).not.toContainText("Catástrofe");
   }
 });
+
+test("RF-015/RF-024: hover sobre una generación catastrófica de una corrida FINALIZADA pinta el overlay ámbar en la grilla", async ({
+  page,
+}) => {
+  /*
+   * Los dos problemas que motivaron el cambio, en un solo recorrido:
+   * la grilla dibujaba siempre el último snapshot (así que leer "murieron
+   * 60 organismos" no tenía reflejo visual), y el overlay ámbar no se veía
+   * en corridas terminadas porque su ventana de 8 generaciones se medía
+   * contra la generación FINAL, lejísimos de la última catástrofe.
+   */
+  test.setTimeout(180_000);
+  await page.goto("/");
+  await page.getByLabel("Generaciones").fill("300");
+  await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
+  await page.getByRole("button", { name: "Iniciar corrida" }).click();
+  await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 60_000 });
+
+  const chart = page.locator(".chart-container").first();
+  const banner = page.locator(".catastrophe-event-banner");
+
+  // Estado inicial: la grilla muestra el final de la corrida, lejos de la
+  // última catástrofe (gen 240 contra 299), así que no hay overlay.
+  await expect(banner).toHaveCount(0);
+
+  const wrapper = page.locator(".chart-container .recharts-wrapper").first();
+  await wrapper.scrollIntoViewIfNeeded();
+  const wbox = (await wrapper.boundingBox())!;
+  const marker = (await chart.locator(".recharts-reference-line").first().locator("line").first().boundingBox())!;
+
+  // Hover exactamente sobre la línea de referencia de una catástrofe.
+  let shown = false;
+  for (const dx of [0, -1, 1, -2, 2]) {
+    await page.mouse.move(marker.x + marker.width / 2 + dx, wbox.y + wbox.height * 0.5);
+    await page.waitForTimeout(120);
+    if ((await banner.count()) > 0) {
+      shown = true;
+      break;
+    }
+  }
+  expect(shown, "la grilla no mostró el overlay de catástrofe al hacer hover sobre el evento").toBe(true);
+
+  // El banner nombra la misma generación que el panel de valores.
+  const panelText = (await page.locator(".chart-hover-panel").textContent()) ?? "";
+  const hoveredGen = /Generación (\d+)/.exec(panelText)![1];
+  await expect(banner).toContainText(`gen ${hoveredGen}`);
+  expect(panelText).toMatch(/Catástrofe: murieron \d+ organismos/);
+
+  // Y la grilla avisa que está mostrando una generación pasada.
+  await expect(page.locator(".population-grid-generation").first()).toContainText(
+    `Estás viendo la generación ${hoveredGen}`,
+  );
+});
+
+test("regresión: una corrida en vivo sin hover sigue mostrando el último snapshot en la grilla", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto("/");
+  await page.getByLabel("Generaciones").fill("200");
+  await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("60");
+  await page.getByRole("button", { name: "Iniciar corrida" }).click();
+  await expect(page.locator(".status-line")).toContainText("en curso", { timeout: 20_000 });
+
+  // Sin tocar el gráfico: la grilla invita al click, lo que solo pasa cuando
+  // está mostrando el último snapshot de una corrida abierta.
+  await expect(page.locator(".population-grid-hint").first()).toContainText("Hacé click en una celda");
+  await expect(page.locator(".population-grid-canvas").first()).toHaveClass(/population-grid-canvas(?!-inert)/);
+  const cursor = await page.locator(".population-grid-canvas").first().evaluate((el) => getComputedStyle(el).cursor);
+  expect(cursor).toBe("pointer");
+});
+
+test("modo comparación: el hover en el gráfico de A no mueve la grilla de B", async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto("/");
+  await page.getByLabel("Modo").selectOption("live-compare");
+  await page.getByLabel("Generaciones").fill("300");
+  await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
+  await page.getByRole("button", { name: "Iniciar ambas corridas" }).click();
+  await expect(page.locator(".status-line").first()).toContainText("finalizada", { timeout: 90_000 });
+  await expect(page.locator(".status-line").nth(1)).toContainText("finalizada", { timeout: 90_000 });
+
+  const grids = page.locator(".population-grid");
+  await expect(grids).toHaveCount(2);
+
+  const wrapperA = page.locator(".chart-container .recharts-wrapper").first();
+  await wrapperA.scrollIntoViewIfNeeded();
+  const boxA = (await wrapperA.boundingBox())!;
+  const plotA = (await page.locator(".chart-container").first().locator(".recharts-cartesian-grid-horizontal line").first().boundingBox())!;
+  await page.mouse.move(plotA.x + plotA.width * 0.3, boxA.y + boxA.height * 0.5);
+  await page.waitForTimeout(250);
+
+  // El panel A se movió a una generación pasada…
+  await expect(page.locator(".chart-hover-panel").first()).toContainText(/Generación \d+/);
+  await expect(grids.first().locator(".population-grid-generation")).toContainText("Estás viendo la generación");
+  // …y la grilla de B sigue intacta, en su último snapshot: sin indicador.
+  await expect(grids.nth(1).locator(".population-grid-generation")).toHaveCount(0);
+});

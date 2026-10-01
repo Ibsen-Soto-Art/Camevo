@@ -558,6 +558,16 @@
   cursor: default;
 }
 
+/* Indicador de que la grilla no está en el último snapshot: ámbar tenue,
+   el mismo lenguaje de color que el overlay de catástrofe, porque las dos
+   cosas dicen "esto no es el estado actual". */
+.population-grid-generation {
+  margin: 0.5rem 0 0;
+  color: #f59e0b;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .population-grid-hint {
   margin: 0.5rem 0 0;
   color: var(--color-text-secondary);

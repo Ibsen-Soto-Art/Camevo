@@ -30,6 +30,14 @@ const CATASTROPHE_OVERLAY_FILL = "rgba(245, 158, 11, 0.35)";
 const CATASTROPHE_FLASH_HOLD_GENERATIONS = 8;
 /** Mismo texto en la frase bajo la grilla y en el `title` del canvas — una sola fuente, no dos que puedan divergir. */
 const INSPECT_UNAVAILABLE_HINT = "La inspección de organismos solo está disponible durante una corrida en vivo.";
+/**
+ * Motivo DISTINTO al de arriba, y hace falta que lo sea: con la grilla
+ * mostrando una generación pasada de una corrida que sigue en vivo, decir
+ * "solo durante una corrida en vivo" sería literalmente falso. Acá lo que
+ * no está disponible es inspeccionar el pasado — el endpoint de RF-027
+ * sirve únicamente la generación ACTUAL del servidor.
+ */
+const INSPECT_PAST_GENERATION_HINT = "La inspección de organismos solo funciona en la generación más reciente.";
 
 export interface PopulationGridProps {
   readonly snapshots: readonly GenerationSnapshot[];
@@ -53,6 +61,22 @@ export interface PopulationGridProps {
    * tiene que declarar explícitamente en qué estado está su corrida.
    */
   readonly inspectable: boolean;
+  /**
+   * Generación que el usuario está mirando en el gráfico, o null si
+   * todavía no miró ninguna. Cuando tiene valor, la grilla dibuja ESE
+   * snapshot en vez del último — así el panel de valores y la grilla
+   * cuentan la misma historia.
+   *
+   * Nunca vuelve a null una vez seteada (RunChart no limpia el hover al
+   * salir el mouse, por la misma decisión que hace persistir el panel de
+   * valores), así que la grilla se queda en la última generación mirada.
+   * En una corrida EN VIVO eso significa que la grilla deja de animarse
+   * hasta el próximo hover: es deliberado y coherente con el panel, y la
+   * forma prevista de congelar la vista a propósito sigue siendo Pausar
+   * (RF-023). Para volver a la generación más reciente basta pasar el
+   * mouse por el extremo derecho del gráfico.
+   */
+  readonly hoveredGeneration?: number | null;
 }
 
 /**
@@ -117,14 +141,72 @@ const GRADIENT_CSS = [0, 0.25, 0.5, 0.75, 1].map((t) => fitnessColor(t)).join(",
  * antes, un canvas de 400x400 píxeles físicos mostrado a 400 CSS px se
  * veía correcto en pantallas 1x pero ligeramente suave en 2x/3x.
  */
-export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId, inspectable }: PopulationGridProps) {
+export default function PopulationGrid({
+  snapshots,
+  gridWidth,
+  gridHeight,
+  runId,
+  inspectable,
+  hoveredGeneration = null,
+}: PopulationGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [displaySize, setDisplaySize] = useState(DEFAULT_DISPLAY_SIZE);
   const [inspect, setInspect] = useState<InspectState>({ status: "idle" });
   /** Descarta una respuesta de red vieja si el usuario ya hizo click en otra celda mientras tanto. */
   const requestTokenRef = useRef(0);
-  const latest = snapshots.at(-1);
+  /*
+   * El snapshot que se DIBUJA: el de la generación bajo el cursor, o el
+   * último si el usuario todavía no miró ninguna.
+   *
+   * La búsqueda es lineal sobre el array COMPLETO (hasta 1500+ entradas):
+   * la grilla no recibe los snapshots submuestreados — el LTTB vive dentro
+   * de RunChart, y RunPanel pasa `run.snapshots` entero a los dos hijos a
+   * propósito (ver v0.20.2: submuestrear aguas arriba le rompería la
+   * normalización de color a la grilla). Aun así el costo es despreciable
+   * comparado con `historicalMaxFitness`, acá abajo, que ya recorre todos
+   * los snapshots POR todos sus organismos.
+   *
+   * El fallback al más cercano es defensivo, no un caso que ocurra hoy: las
+   * generaciones que RunChart reporta salen de `chartRows`, que es un
+   * subconjunto de este array, así que la coincidencia exacta siempre
+   * existe. Protege de que un call-site futuro pase arrays distintos a los
+   * dos hijos.
+   */
+  const displayed = useMemo(() => {
+    if (snapshots.length === 0) return undefined;
+    if (hoveredGeneration === null) return snapshots.at(-1);
+
+    let nearest = snapshots[0]!;
+    let nearestDistance = Math.abs(nearest.generation - hoveredGeneration);
+    for (const snapshot of snapshots) {
+      if (snapshot.generation === hoveredGeneration) return snapshot;
+      const distance = Math.abs(snapshot.generation - hoveredGeneration);
+      if (distance < nearestDistance) {
+        nearest = snapshot;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }, [snapshots, hoveredGeneration]);
+
+  const latest = displayed;
+  /** RF-027: el endpoint solo sirve la generación ACTUAL del servidor, así que inspeccionar una pasada daría datos de otra. */
+  const showingLatestSnapshot = displayed !== undefined && displayed === snapshots.at(-1);
+  const canInspect = inspectable && showingLatestSnapshot;
+  /*
+   * Dos motivos distintos para no poder inspeccionar, con mensajes
+   * distintos: la corrida ya no está abierta en el servidor, o la grilla
+   * está mostrando una generación pasada. Si la corrida sigue en vivo y
+   * solo pasa lo segundo, el mensaje tiene que decir eso — "solo durante
+   * una corrida en vivo" sería falso con la corrida corriendo.
+   *
+   * QUÉ generación se está mirando es información aparte, en su propio
+   * elemento: le hace falta al usuario tanto si puede inspeccionar como si
+   * no, y atarla a este mensaje la escondía justo en las corridas
+   * guardadas, que es donde más importa.
+   */
+  const unavailableHint = inspectable ? INSPECT_PAST_GENERATION_HINT : INSPECT_UNAVAILABLE_HINT;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -168,18 +250,32 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId
     return max;
   }, [snapshots]);
 
-  /** Generación del catastropheOccurred más reciente vista hasta ahora, o null si todavía no hubo ninguno. */
+  /**
+   * Última catástrofe EN O ANTES de la generación que se está dibujando —
+   * no la última de toda la corrida.
+   *
+   * La diferencia es la que hace correcto al overlay. Con el máximo global,
+   * al mostrar una generación anterior a la última catástrofe la resta de
+   * abajo se vuelve NEGATIVA y pasa el `< CATASTROPHE_FLASH_HOLD_GENERATIONS`
+   * trivialmente: medido, mostrar la generación 60 de una corrida moderada
+   * de 1500 daba 60 - 1440 = -1380, o sea overlay encendido en casi toda la
+   * corrida. Pasar de "no aparece nunca" a "aparece casi siempre" habría
+   * sido peor que el bug original.
+   */
   const lastCatastropheGeneration = useMemo(() => {
+    if (!displayed) return null;
     let last: number | null = null;
     for (const snapshot of snapshots) {
+      if (snapshot.generation > displayed.generation) break;
       if (snapshot.catastropheOccurred) last = snapshot.generation;
     }
     return last;
-  }, [snapshots]);
+  }, [snapshots, displayed]);
 
   // RF-015 (marcadores visuales): el overlay se mantiene durante
   // CATASTROPHE_FLASH_HOLD_GENERATIONS generaciones desde el
-  // catastropheOccurred más reciente, no solo en la generación exacta —
+  // catastropheOccurred más reciente HASTA la generación mostrada, no solo
+  // en la generación exacta —
   // como cada snapshot nuevo redibuja la grilla completa desde cero (ver
   // comentario de la función de dibujo), esto simplemente significa
   // "seguir mostrando el overlay mientras estemos dentro de la ventana",
@@ -285,8 +381,8 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId
           ref={canvasRef}
           role="img"
           aria-label="Grilla poblacional"
-          className={inspectable ? "population-grid-canvas" : "population-grid-canvas population-grid-canvas-inert"}
-          title={inspectable ? undefined : INSPECT_UNAVAILABLE_HINT}
+          className={canInspect ? "population-grid-canvas" : "population-grid-canvas population-grid-canvas-inert"}
+          title={canInspect ? undefined : unavailableHint}
           onClick={handleCellClick}
         />
         {showCatastropheOverlay && (
@@ -301,8 +397,13 @@ export default function PopulationGrid({ snapshots, gridWidth, gridHeight, runId
         para que la explicación llegue también en mobile, donde `title` no
         existe.
       */}
+      {displayed !== undefined && !showingLatestSnapshot && (
+        <p className="population-grid-generation">
+          Estás viendo la generación {displayed.generation}, no la más reciente.
+        </p>
+      )}
       <p className="population-grid-hint">
-        {inspectable ? "Hacé click en una celda para ver el detalle de ese organismo." : INSPECT_UNAVAILABLE_HINT}
+        {canInspect ? "Hacé click en una celda para ver el detalle de ese organismo." : unavailableHint}
       </p>
       {inspect.status !== "idle" && (
         <div className="organism-inspect-panel">

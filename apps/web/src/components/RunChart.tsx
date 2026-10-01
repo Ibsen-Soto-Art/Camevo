@@ -136,6 +136,19 @@ export const DEFAULT_HIDDEN_KEYS = ["AND", "NOT", "OR", "geneticDiversity"];
 export interface RunChartProps {
   readonly snapshots: readonly GenerationSnapshot[];
   readonly height?: number;
+  /**
+   * Se avisa cada vez que cambia la generación bajo el cursor (o el dedo),
+   * para que la grilla poblacional pueda mostrar ESA generación en vez de
+   * la última. Sin esto, leer "murieron 60 organismos" en el panel
+   * mientras la grilla seguía dibujando la generación final era una
+   * desconexión visible, sobre todo en generaciones catastróficas.
+   *
+   * Nunca se llama con `null`: no hay `onMouseLeave` que limpie el estado
+   * (decisión de v0.20.0 — el panel de valores persiste a propósito), así
+   * que una vez que el usuario miró una generación, esa queda como la
+   * última conocida.
+   */
+  readonly onHoverGeneration?: (generation: number) => void;
 }
 
 /**
@@ -150,7 +163,7 @@ export interface RunChartProps {
  * con dejarlo documentado solo en comentarios de código/tests que el
  * usuario nunca ve.
  */
-export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
+export default function RunChart({ snapshots, height = 380, onHoverGeneration }: RunChartProps) {
   const climateTaskIds = useMemo(() => {
     const ids = new Set<string>();
     for (const snapshot of snapshots) {
@@ -195,6 +208,12 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
   // últimos valores vistos hasta que el mouse (o el dedo, en mobile)
   // entra a una generación distinta.
   const [hoveredGeneration, setHoveredGeneration] = useState<number | null>(null);
+
+  /** Único punto que mueve el hover: mantiene el estado local y el aviso hacia afuera siempre en el mismo valor. */
+  function updateHoveredGeneration(generation: number) {
+    setHoveredGeneration(generation);
+    onHoverGeneration?.(generation);
+  }
   const hoveredRow = hoveredGeneration === null ? null : chartRows.find((row) => row.generation === hoveredGeneration);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   /*
@@ -313,7 +332,7 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
         nearestDistance = distance;
       }
     }
-    setHoveredGeneration(nearest.generation);
+    updateHoveredGeneration(nearest.generation);
   }
 
   function handleTouch(event: ReactTouchEvent<HTMLDivElement>) {
@@ -360,7 +379,7 @@ export default function RunChart({ snapshots, height = 380 }: RunChartProps) {
             margin={chartMargin}
             onMouseMove={(state) => {
               if (Date.now() - lastTouchAtRef.current < SYNTHETIC_MOUSE_WINDOW_MS) return;
-              if (state?.activeLabel !== undefined) setHoveredGeneration(Number(state.activeLabel));
+              if (state?.activeLabel !== undefined) updateHoveredGeneration(Number(state.activeLabel));
             }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID_COLOR} />

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ClimateChangeSpeed } from "../lib/camevo-client";
 import type { RunStatus, RunView, SaveStatus } from "../hooks/useRun";
 import ExplanatoryPanel from "./ExplanatoryPanel";
@@ -54,6 +55,16 @@ export default function RunPanel({
   saveStatus,
   saveError,
 }: RunPanelProps) {
+  /*
+   * El hover del gráfico vive acá, no en RunChart, porque lo consumen DOS
+   * hijos: el panel de valores (dentro de RunChart) y la grilla
+   * poblacional. Es estado local del panel a propósito: en modo
+   * comparación hay dos <RunPanel> montados y cada uno tiene el suyo, así
+   * que mover el mouse sobre el gráfico de la corrida A no mueve la grilla
+   * de la B.
+   */
+  const [hoveredGeneration, setHoveredGeneration] = useState<number | null>(null);
+
   return (
     <div className="run-panel">
       <h2>{title}</h2>
@@ -68,7 +79,7 @@ export default function RunPanel({
       )}
       {run.errorMessage && <p className="error">{run.errorMessage}</p>}
       <div className="chart-container">
-        <RunChart snapshots={run.snapshots} height={chartHeight} />
+        <RunChart snapshots={run.snapshots} height={chartHeight} onHoverGeneration={setHoveredGeneration} />
       </div>
       {run.snapshots.length > 0 && (
         <>
@@ -85,6 +96,7 @@ export default function RunPanel({
             gridHeight={gridHeight}
             runId={run.runId}
             inspectable={run.status === "running" || run.status === "paused"}
+            hoveredGeneration={hoveredGeneration}
           />
           <ExplanatoryPanel
             climateEnabled={climateEnabled}

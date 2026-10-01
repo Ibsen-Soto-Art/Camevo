@@ -416,3 +416,153 @@ describe("<PopulationGrid /> (RF-024)", () => {
     });
   });
 });
+
+/**
+ * La grilla sigue la generación que el usuario mira en el gráfico. Antes
+ * dibujaba siempre `snapshots.at(-1)`, así que leer "murieron 60
+ * organismos" en el panel de valores mientras la grilla mostraba la
+ * generación final era una desconexión visible.
+ *
+ * Se verifica por los `fillRect` registrados: el mock de canvas guarda cada
+ * relleno con su color, y como cada generación de estos fixtures tiene un
+ * fitness distinto, el color dice sin ambigüedad cuál se dibujó.
+ */
+describe("<PopulationGrid /> — sigue la generación bajo el cursor del gráfico", () => {
+  function run(): GenerationSnapshot[] {
+    // Grilla 1x1: un solo organismo por generación, con fitness creciente.
+    return [
+      snapshot({ generation: 0, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] }),
+      snapshot({ generation: 60, organisms: [{ id: "b", x: 0, y: 0, fitness: 5 }], catastropheOccurred: true, catastropheDeaths: 60 }),
+      snapshot({ generation: 120, organisms: [{ id: "c", x: 0, y: 0, fitness: 10 }] }),
+    ];
+  }
+
+  /** Color de la celda del organismo: el segundo fillRect (el primero es el fondo de hábitat vacío). */
+  function cellColor(fills: { color: string }[]): string {
+    return fills[1]?.color ?? "(ninguno)";
+  }
+
+  it("sin hover dibuja el último snapshot, como siempre", () => {
+    const { fills } = mockCanvasContext();
+    mockCanvasRect();
+    render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable />);
+    // fitness 10 sobre un máximo histórico de 10 → verde pleno (hue 120).
+    expect(cellColor(fills)).toBe("hsl(120, 70%, 45%)");
+  });
+
+  it("con hoveredGeneration=60 dibuja el snapshot de la generación 60, no el último", () => {
+    const { fills } = mockCanvasContext();
+    mockCanvasRect();
+    render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={60} />);
+    // fitness 5 sobre el máximo histórico 10 → mitad de la escala (hue 60).
+    expect(cellColor(fills)).toBe("hsl(60, 70%, 45%)");
+  });
+
+  it("al volver hoveredGeneration a null se queda en la última generación mirada, no resetea al último snapshot", () => {
+    const { fills } = mockCanvasContext();
+    mockCanvasRect();
+    const { rerender } = render(
+      <PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={60} />,
+    );
+    expect(cellColor(fills)).toBe("hsl(60, 70%, 45%)");
+
+    // RunChart nunca manda null (no limpia el hover al salir el mouse), pero
+    // si un call-site lo hiciera, el comportamiento esperado es el del panel
+    // de valores: quedarse donde estaba, no saltar al final.
+    rerender(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={60} />);
+    expect(cellColor(fills)).toBe("hsl(60, 70%, 45%)");
+  });
+
+  it("hover sobre una generación ausente del array usa la más cercana, no deja la grilla sin actualizar", () => {
+    const { fills } = mockCanvasContext();
+    mockCanvasRect();
+    // 58 no existe; la más cercana es 60 (distancia 2) contra 0 (distancia 58).
+    render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={58} />);
+    expect(cellColor(fills)).toBe("hsl(60, 70%, 45%)");
+  });
+
+  it("la normalización de color usa el máximo GLOBAL, no el máximo hasta la generación mostrada", () => {
+    // Decisión deliberada: si la escala cambiara según la generación mirada,
+    // mover el mouse repintaría toda la grilla con otro criterio.
+    const { fills } = mockCanvasContext();
+    mockCanvasRect();
+    render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={0} />);
+    // fitness 1 sobre el máximo global 10 → hue 12, no verde pleno.
+    expect(cellColor(fills)).toBe("hsl(12, 70%, 45%)");
+  });
+
+  describe("overlay ámbar de catástrofe", () => {
+    const AMBER = "rgba(245, 158, 11, 0.35)";
+
+    it("aparece al mostrar la generación catastrófica, aunque la corrida ya haya terminado", () => {
+      const { fills } = mockCanvasContext();
+      mockCanvasRect();
+      render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={60} />);
+      expect(fills.some((f) => f.color === AMBER)).toBe(true);
+    });
+
+    it("NO aparece en una generación anterior a la catástrofe — el bug que una resta negativa habría introducido", () => {
+      // Con la ventana medida contra la última catástrofe de TODA la corrida,
+      // 0 - 60 = -60 < 8 habría encendido el overlay acá.
+      const { fills } = mockCanvasContext();
+      mockCanvasRect();
+      render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={0} />);
+      expect(fills.some((f) => f.color === AMBER)).toBe(false);
+    });
+
+    it("NO aparece al final de una corrida que terminó lejos de la última catástrofe", () => {
+      // Generación 120 contra catástrofe en 60: 60 de distancia, muy fuera de
+      // la ventana de 8. Es la causa real de que el overlay no se viera en
+      // corridas guardadas.
+      const { fills } = mockCanvasContext();
+      mockCanvasRect();
+      render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable />);
+      expect(fills.some((f) => f.color === AMBER)).toBe(false);
+    });
+  });
+
+  describe("inspección (RF-027) mientras se mira el pasado", () => {
+    it("una corrida EN VIVO mostrando una generación pasada no invita al click, y el motivo dice cuál generación es", () => {
+      mockCanvasContext();
+      mockCanvasRect();
+      const { container } = render(
+        <PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable hoveredGeneration={60} />,
+      );
+      // Dos elementos con dos trabajos: cuál generación se ve, y por qué no
+      // se puede inspeccionar.
+      expect(container.querySelector(".population-grid-generation")).toHaveTextContent(
+        "Estás viendo la generación 60, no la más reciente.",
+      );
+      const hint = container.querySelector(".population-grid-hint")!;
+      expect(hint).toHaveTextContent(/solo funciona en la generación más reciente/i);
+      // El motivo NO puede ser "solo durante una corrida en vivo": la corrida
+      // ESTÁ en vivo, lo que no se puede inspeccionar es el pasado.
+      expect(hint).not.toHaveTextContent(/solo está disponible durante una corrida en vivo/i);
+      expect(container.querySelector("canvas")?.className).toContain("population-grid-canvas-inert");
+    });
+
+    it("en el último snapshot de una corrida en vivo sí invita al click", () => {
+      mockCanvasContext();
+      mockCanvasRect();
+      const { container } = render(<PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable />);
+      expect(container.querySelector(".population-grid-hint")).toHaveTextContent(/Hacé click en una celda/i);
+      expect(container.querySelector("canvas")?.className).not.toContain("population-grid-canvas-inert");
+      // En el último snapshot no hay nada que aclarar sobre la generación.
+      expect(container.querySelector(".population-grid-generation")).toBeNull();
+    });
+
+    it("una corrida ya cerrada en el servidor mantiene su propio motivo, no el de generación pasada", () => {
+      mockCanvasContext();
+      mockCanvasRect();
+      const { container } = render(
+        <PopulationGrid snapshots={run()} gridWidth={1} gridHeight={1} runId="r" inspectable={false} hoveredGeneration={60} />,
+      );
+      expect(container.querySelector(".population-grid-hint")).toHaveTextContent(
+        /solo está disponible durante una corrida en vivo/i,
+      );
+      // Pero el indicador de generación SÍ aparece: es justo en las corridas
+      // guardadas donde el usuario necesita saber qué está mirando.
+      expect(container.querySelector(".population-grid-generation")).toHaveTextContent("Estás viendo la generación 60");
+    });
+  });
+});
