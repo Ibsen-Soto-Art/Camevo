@@ -245,3 +245,33 @@ describe("hasVisibleClimateSeries — la condición del eje 'Clima' usa claves d
     expect(hasVisibleClimateSeries(new Set(["AND", "NOT", "OR"]), ["AND", "NOT", "OR", "XOR"])).toBe(true);
   });
 });
+
+/**
+ * CAMBIO 2 de la revisión de terminología: el gráfico tiene que decir qué
+ * mide, porque "Fitness promedio" no se definía en ningún lugar de la UI
+ * (el caption de la grilla sí definía el suyo). Va como caption y no como
+ * tooltip: las descripciones por métrica se eliminaron en v0.20.0 con
+ * `describeMetric`/`ChartTooltip`, y un caption se lee sin descubrir que
+ * hay que pasar el mouse.
+ */
+describe("<RunChart /> — define qué mide 'Fitness promedio' y lo distingue de la grilla", () => {
+  it("el caption explica que es una tasa de la población en esta generación", () => {
+    const { container } = render(<RunChart snapshots={[snapshot({ generation: 0 })]} />);
+    expect(container.textContent).toMatch(/tasa de nacimientos por organismo en esta generación/i);
+    expect(container.textContent).toMatch(/qué tan bien se está adaptando la POBLACIÓN en este momento/);
+  });
+
+  it("advierte explícitamente que no es lo mismo que el éxito reproductivo acumulado de la grilla", () => {
+    const { container } = render(<RunChart snapshots={[snapshot({ generation: 0 })]} />);
+    expect(container.textContent).toMatch(/No confundir con el éxito reproductivo individual que muestra la grilla/);
+    expect(container.textContent).toMatch(/acumulado desde que nació cada organismo/);
+  });
+
+  it("el caption está presente sin necesidad de hover — es lo que lo distingue del tooltip que reemplaza", () => {
+    const { container } = render(<RunChart snapshots={[snapshot({ generation: 0 })]} />);
+    // Sin ninguna interacción: el placeholder del panel de valores sigue ahí
+    // y la definición ya se puede leer.
+    expect(container.textContent).toMatch(/pasá el mouse sobre el gráfico para ver los valores/i);
+    expect(container.querySelectorAll(".chart-caption").length).toBeGreaterThanOrEqual(1);
+  });
+});

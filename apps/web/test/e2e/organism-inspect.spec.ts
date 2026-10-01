@@ -52,7 +52,7 @@ test("click en la celda ocupada de una corrida EN VIVO (todavía corriendo) mues
 
   await clickUntilOrganismFound(page, page.locator(".population-grid-canvas"));
 
-  await expect(page.locator(".organism-inspect-panel")).toContainText(/Produjo \d+ crías/);
+  await expect(page.locator(".organism-inspect-panel")).toContainText(/Éxito reproductivo: \d+ crías producidas en total/);
   await expect(page.locator(".organism-inspect-panel")).toContainText(/Generación \d+/);
   await expect(page.locator(".organism-inspect-panel")).toContainText(/Posición en la grilla: \(\d, \d\)/);
 });

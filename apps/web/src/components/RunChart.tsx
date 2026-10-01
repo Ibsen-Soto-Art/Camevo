@@ -619,6 +619,24 @@ export default function RunChart({ snapshots, height = 380, onHoverGeneration }:
           <p className="chart-hover-placeholder">Pasá el mouse sobre el gráfico para ver los valores.</p>
         )}
       </div>
+      {/*
+        CAMBIO 2 de la revisión de terminología. El pedido original hablaba
+        de la descripción de "Fitness promedio" en FIXED_METRIC_DESCRIPTIONS,
+        pero esa constante no existe: las descripciones por métrica se
+        eliminaron en v0.20.0 junto con `describeMetric` y `ChartTooltip`,
+        porque el tooltip flotante tapaba justamente las líneas que el
+        usuario quería leer.
+
+        Va como caption, que es donde ya viven las aclaraciones del gráfico
+        (diversidad, eventos catastróficos) — y tiene una ventaja sobre el
+        tooltip que reemplaza: se lee sin tener que descubrir que hay que
+        pasar el mouse.
+      */}
+      <p className="chart-caption">
+        <strong>Fitness promedio</strong>: tasa de nacimientos por organismo en esta generación — indica qué tan bien se
+        está adaptando la POBLACIÓN en este momento. No confundir con el éxito reproductivo individual que muestra la
+        grilla, que es acumulado desde que nació cada organismo.
+      </p>
       <p className="chart-caption">
         La diversidad genética es una aproximación: compara genomas por posición sin alinearlos, así que una parte del
         número (hasta ~27% de una diferencia real comparable, medido) puede venir de que los genomas tienen distinta

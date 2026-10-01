@@ -412,7 +412,8 @@ export default function PopulationGrid({
           {inspect.status === "error" && <p className="organism-inspect-error">{inspect.message}</p>}
           {inspect.status === "success" && (
             <ul className="organism-inspect-details">
-              <li>Produjo {inspect.detail.fitness} crías.</li>
+              {/* "en total" explicita que es un acumulado desde que nació el organismo, no una tasa de esta generación. */}
+              <li>Éxito reproductivo: {inspect.detail.fitness} crías producidas en total.</li>
               <li>
                 {inspect.detail.tasksSolved.length > 0
                   ? `Tareas lógicas que resuelve: ${inspect.detail.tasksSolved.join(", ")}.`
@@ -428,11 +429,23 @@ export default function PopulationGrid({
       )}
       <div className="population-grid-legend">
         <div className="grid-legend-item grid-legend-gradient">
-          {/* RNF-004 (re-auditoría): "fitness" nunca se definía en texto plano en ningún punto del flujo principal — el tooltip lo explica, pero eso requiere que alguien piense en pasar el mouse. Acá, donde el usuario ya está mirando la grilla, es el lugar natural para la primera definición mínima. */}
-          <span className="grid-legend-label">Fitness bajo (pocas crías)</span>
+          {/*
+            RNF-004: la glosa entre paréntesis es lo que hace comprensible el
+            término sin conocimiento previo, así que se mantiene.
+
+            Dice "éxito reproductivo" y no "fitness" a propósito: el gráfico
+            usa "Fitness promedio" para OTRA métrica — una tasa instantánea
+            de la población (`births / populationSize`), que el propio
+            contrato de datos documenta como "tasa de reemplazo
+            generacional". Acá la escala de color mide el contador ACUMULADO
+            de crías de cada organismo. La misma palabra para las dos cosas
+            invitaba a compararlas, y sus escalas no son comparables (1.88
+            contra 136 en la misma generación, medido).
+          */}
+          <span className="grid-legend-label">Éxito reproductivo bajo (pocas crías)</span>
           <span className="grid-legend-bar" style={{ background: `linear-gradient(to right, ${GRADIENT_CSS})` }} />
           {/* Ajuste 5: mismo azul (#1f77b4) que "Fitness promedio" en RunChart — puente visual entre las dos representaciones de la misma variable, sin tocar el gradiente rojo→verde de la grilla en sí. */}
-          <span className="grid-legend-label grid-legend-label-fitness-high">Fitness alto (muchas crías)</span>
+          <span className="grid-legend-label grid-legend-label-fitness-high">Éxito reproductivo alto (muchas crías)</span>
         </div>
         <div className="grid-legend-item">
           <span className="grid-legend-swatch" style={{ background: EMPTY_CELL_COLOR }} />

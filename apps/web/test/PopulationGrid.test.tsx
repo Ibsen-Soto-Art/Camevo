@@ -203,8 +203,8 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
       const legend = within(container.querySelector(".population-grid-legend") as HTMLElement);
 
-      expect(legend.getByText(/Fitness bajo/)).toBeInTheDocument();
-      expect(legend.getByText(/Fitness alto/)).toBeInTheDocument();
+      expect(legend.getByText(/Éxito reproductivo bajo/)).toBeInTheDocument();
+      expect(legend.getByText(/Éxito reproductivo alto/)).toBeInTheDocument();
       expect(legend.getByText(/Hábitat vacío/i)).toBeInTheDocument();
       expect(legend.getByText(/Evento catastrófico/i)).toBeInTheDocument();
     });
@@ -214,8 +214,8 @@ describe("<PopulationGrid /> (RF-024)", () => {
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
-      expect(screen.getByText("Fitness bajo (pocas crías)")).toBeInTheDocument();
-      expect(screen.getByText("Fitness alto (muchas crías)")).toBeInTheDocument();
+      expect(screen.getByText("Éxito reproductivo bajo (pocas crías)")).toBeInTheDocument();
+      expect(screen.getByText("Éxito reproductivo alto (muchas crías)")).toBeInTheDocument();
     });
 
     it("la barra de gradiente va de rojo (fitness bajo) a verde (fitness alto), igual que las celdas reales", () => {
@@ -228,12 +228,12 @@ describe("<PopulationGrid /> (RF-024)", () => {
       expect(bar.style.background).toContain("hsl(120, 70%, 45%)"); // mismo fitnessColor(1)
     });
 
-    it("Ajuste 5: la etiqueta 'Fitness alto' usa el mismo azul (#1f77b4) que la línea de fitness de RunChart — puente visual entre ambas leyendas", () => {
+    it("Ajuste 5: la etiqueta de éxito reproductivo alto usa el mismo azul (#1f77b4) que la línea de fitness de RunChart — puente visual entre ambas leyendas", () => {
       mockCanvasContext();
       const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] });
       render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="test-run" inspectable />);
 
-      expect(screen.getByText(/Fitness alto/)).toHaveClass("grid-legend-label-fitness-high");
+      expect(screen.getByText(/Éxito reproductivo alto/)).toHaveClass("grid-legend-label-fitness-high");
     });
   });
 
@@ -274,7 +274,7 @@ describe("<PopulationGrid /> (RF-024)", () => {
 
       expect(screen.getByText(/Consultando el organismo/i)).toBeInTheDocument();
 
-      await waitFor(() => expect(screen.getByText(/Produjo 4 crías/)).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByText(/Éxito reproductivo: 4 crías producidas en total/)).toBeInTheDocument());
       expect(screen.getByText(/Tareas lógicas que resuelve: NOT, AND/)).toBeInTheDocument();
       expect(screen.getByText(/Generación 12/)).toBeInTheDocument();
       expect(screen.getByText(/Posición en la grilla: \(0, 0\)/)).toBeInTheDocument();
@@ -564,5 +564,56 @@ describe("<PopulationGrid /> — sigue la generación bajo el cursor del gráfic
       // guardadas donde el usuario necesita saber qué está mirando.
       expect(container.querySelector(".population-grid-generation")).toHaveTextContent("Estás viendo la generación 60");
     });
+  });
+});
+
+/**
+ * Revisión de terminología: el gráfico y la grilla usaban la palabra
+ * "Fitness" para dos métricas con escalas incomparables — una tasa
+ * instantánea de la población (`births / populationSize`, que el contrato
+ * documenta como "tasa de reemplazo generacional") y el contador ACUMULADO
+ * de crías de cada organismo. Medido en la misma generación: 1.88 contra
+ * 136.
+ */
+describe("<PopulationGrid /> — la grilla habla de éxito reproductivo, no de 'fitness'", () => {
+  function renderGrid() {
+    mockCanvasContext();
+    mockCanvasRect();
+    const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 7 }] });
+    return render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="r" inspectable />);
+  }
+
+  it("la leyenda dice 'Éxito reproductivo' en los dos extremos, con la glosa que lo hace comprensible", () => {
+    const { container } = renderGrid();
+    const legend = within(container.querySelector(".population-grid-legend") as HTMLElement);
+    expect(legend.getByText("Éxito reproductivo bajo (pocas crías)")).toBeInTheDocument();
+    expect(legend.getByText("Éxito reproductivo alto (muchas crías)")).toBeInTheDocument();
+  });
+
+  it("la palabra 'Fitness' ya no aparece en ningún texto de la grilla", () => {
+    // El punto del cambio: que el término quede reservado al gráfico, para
+    // que no haya dos métricas distintas con el mismo nombre.
+    const { container } = renderGrid();
+    expect(container.textContent).not.toMatch(/fitness/i);
+  });
+
+  it("el panel de inspección dice 'Éxito reproductivo: N crías producidas en total' — 'en total' explicita el acumulado", async () => {
+    mockCanvasContext();
+    mockCanvasRect();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ generation: 12, x: 0, y: 0, fitness: 136, tasksSolved: ["NOT"] }),
+      }),
+    );
+    const snap = snapshot({ organisms: [{ id: "a", x: 0, y: 0, fitness: 136 }] });
+    const { container } = render(<PopulationGrid snapshots={[snap]} gridWidth={1} gridHeight={1} runId="r" inspectable />);
+    fireEvent.click(container.querySelector("canvas") as HTMLCanvasElement, { clientX: 200, clientY: 200 });
+
+    await waitFor(() =>
+      expect(screen.getByText("Éxito reproductivo: 136 crías producidas en total.")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/^Produjo \d+ crías\.$/)).not.toBeInTheDocument();
   });
 });
