@@ -1,8 +1,51 @@
 # CAMEVO — Registro de Cambios (Changelog)
 
-Este documento registra la evolución de las **decisiones de documentación y alcance** del proyecto (no del código — eso se rastrea con Git, ver `05-estructura-repositorio.md`). Sigue el estándar [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/): cada versión agrupa cambios en `Added` (agregado), `Changed` (modificado) y `Removed` (excluido/retirado).
+Este documento registra la evolución de las **decisiones de documentación y alcance** del proyecto (no del código — eso se rastrea con Git, ver `05-estructura-repositorio.md`). Sigue el estándar [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/): cada versión agrupa cambios en `Added` (agregado), `Changed` (modificado), `Removed` (excluido/retirado), `Fixed` (corrección) y, cuando aplica, `Decisiones de diseño registradas` y `Motivo`.
 
 Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear la versión de cada archivo individual.
+
+---
+
+## [v0.22.0] — Panel de hover muestra organismos muertos por catástrofe
+
+**Documentos afectados:** `02-requisitos.md` (v1.6 → v1.7 — extensión de la nota de
+visibilidad de RF-015).
+
+### Added
+- `catastropheDeaths: number` en `GenerationSnapshot` (shared-types): el conteo de
+  organismos eliminados por catástrofe en esa generación, o 0 si no hubo evento. El campo es
+  requerido en el tipo; las corridas guardadas antes de este deploy no lo tienen en su
+  JSONB — el frontend aplica `?? 0` en el punto de lectura, lo que hace que la línea
+  simplemente no aparezca en esas corridas en vez de mostrar un dato inventado.
+- Panel de hover: cuando `catastropheDeaths > 0`, muestra en ámbar (#f59e0b — el mismo color
+  del overlay de la grilla, para que "catástrofe" tenga un solo lenguaje de color en las dos
+  representaciones):
+  "⚡ Catástrofe: murieron N organismos. La población se rellenó en la misma generación, así
+  que la curva no baja."
+  La segunda oración existe porque el número solo responde "qué pasó" pero deja intacta la
+  pregunta "por qué no lo veo en la curva".
+
+### Decisiones de diseño registradas
+- Sin porcentaje: requeriría la población previa al evento, que el snapshot no tiene
+  (`populationSize` se mide después del ciclo de reproducción, ya rellenada). `severity` no
+  cruza la frontera cliente-servidor. El conteo absoluto es exacto; un porcentaje aproximado
+  sería un dato inventado en un simulador educativo.
+- Descartado: marcar celdas en la grilla por tipo de cambio. Requeriría hasta 1600 índices
+  de celdas por generación catastrófica en el array caliente del snapshot — contra la
+  decisión de "snapshot liviano" documentada en `03-arquitectura.md` §5. Y las celdas
+  eliminadas ya están repobladas cuando se toma el snapshot, así que habría que pintar de
+  otro color celdas ocupadas por organismos nuevos, lo cual es más confuso que informativo.
+- Descartado: nota en el panel explicativo. No comunica la magnitud del evento ni está junto
+  a la línea roja que genera la pregunta. Puede ser útil como complemento futuro, no como
+  solución principal.
+
+### Motivo
+En velocidades Lenta y Moderada, la catástrofe ocurre antes del ciclo de reproducción: los
+sobrevivientes rellenan las celdas vacías antes de que se tome el snapshot. La curva de
+población queda plana (399-400) aunque hayan muerto 60 organismos. El único marcador visual
+eran las líneas verticales rojas y el destello ámbar — sin ninguna indicación de la magnitud
+del evento. Verificado en producción real: gen 60 de una corrida Moderada → 60 muertes,
+populationSize 400.
 
 ---
 
