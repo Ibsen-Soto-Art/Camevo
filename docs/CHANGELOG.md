@@ -1,6 +1,6 @@
 # CAMEVO — Registro de Cambios (Changelog)
 
-Este documento registra la evolución de las **decisiones de documentación y alcance** del proyecto (no del código — eso se rastrea con Git, ver `05-estructura-repositorio.md`). Sigue el estándar [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/): cada versión agrupa cambios en `Added` (agregado), `Changed` (modificado), `Removed` (excluido/retirado), `Fixed` (corrección) y, cuando aplica, `Decisiones de diseño registradas` y `Motivo`.
+Este documento registra la evolución de las **decisiones de documentación y alcance** del proyecto (no del código — eso se rastrea con Git, ver `05-estructura-repositorio.md`). Sigue el estándar [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/): cada versión agrupa cambios en secciones estándar (`Added` agregado, `Changed` modificado, `Removed` excluido/retirado, `Fixed` corrección) más secciones propias del proyecto cuando el cambio lo amerita (`Motivo`, `Decisiones de diseño registradas`, `Correcciones a premisas del diagnóstico previo`, `Limitación conocida registrada`, y las que hagan falta).
 
 Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear la versión de cada archivo individual.
 
