@@ -6,6 +6,45 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.23.0] — Grilla sincronizada con el hover del gráfico
+
+**Documentos afectados:** `02-requisitos.md` (v1.7 → v1.8 — una oración en la nota de
+visibilidad de RF-015: los marcadores ahora son navegables y el overlay funciona en corridas
+guardadas).
+
+### Added
+- La grilla poblacional muestra el snapshot de la generación que el usuario está mirando en
+  el gráfico (hover), no siempre el último. Al salir del gráfico, la grilla se queda en la
+  última generación vista — mismo comportamiento que el panel de valores fijo, por
+  consistencia.
+- Indicador de generación visible en la grilla mientras no está mostrando el último snapshot,
+  separado del affordance de inspección (antes estaban atados: `inspectable=false` en
+  corridas guardadas hacía invisible el indicador justo donde más importaba).
+
+### Fixed
+- El overlay ámbar de catástrofe ahora aparece en corridas ya finalizadas cuando el usuario
+  hace hover sobre una generación catastrófica. Antes solo aparecía en corridas en vivo.
+- En vivo, la grilla deja de animarse tras el primer hover — el snapshot hoviado congela la
+  vista hasta el próximo movimiento del mouse. Es coherente con pausar (RF-023) y con el
+  panel de valores fijo.
+
+### Correcciones a premisas del diagnóstico previo
+- **`onHoverGeneration` no existía:** `RunChartProps` no tenía ese callback — se creyó
+  disponible. Había que agregarlo, y es el cambio estructural de este trabajo.
+- **`run.snapshots` llega completo (1500+, no 300):** el LTTB vive dentro de `RunChart` por la
+  decisión de v0.20.2 — la grilla recibe el array completo. No cambia la viabilidad (la
+  búsqueda es O(n) sobre un array en memoria), sí el número en el comentario.
+- **El overlay requirió cambio real:** sincronizar la grilla sin corregir
+  `lastCatastropheGeneration` habría encendido el overlay en casi toda la corrida por una
+  resta negativa al mostrar generaciones anteriores. Es el hallazgo más importante del
+  diagnóstico: la mejora obvia traía un bug peor que el original.
+
+**Motivo:** al hacer hover sobre una generación catastrófica, el panel decía "murieron 60
+organismos" mientras la grilla mostraba la generación 1499 sin ninguna señal del evento. La
+grilla era un espejo fijo del último snapshot, no una vista navegable de la corrida.
+
+---
+
 ## [v0.22.0] — Panel de hover muestra organismos muertos por catástrofe
 
 **Documentos afectados:** `02-requisitos.md` (v1.6 → v1.7 — extensión de la nota de
