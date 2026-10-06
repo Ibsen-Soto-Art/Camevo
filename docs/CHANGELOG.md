@@ -6,6 +6,58 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.24.0] — Resiliencia del WebSocket: detección de desconexión, heartbeat y memoria
+
+**Documentos afectados:** `03-arquitectura.md` (v1.4 → v1.5 — fila nueva en tabla de
+decisiones de diseño §5: heartbeat a nivel de aplicación y retención serializada de
+snapshots).
+
+### Added
+- Detección de desconexión: `connectToRunStream` escucha los eventos `close` y `error` del
+  socket. Si el socket se cierra sin haber recibido un mensaje `done`, emite
+  `{ type: "disconnected" }` — un evento sintético del cliente que el servidor nunca envía,
+  documentado como tal en shared-types. La UI muestra: "Conexión perdida — la corrida puede
+  haber terminado en el servidor. Recargá la página para ver el resultado." Bandera
+  `receivedDone` evita que el cierre normal (el servidor cierra el socket justo después del
+  `done`) muestre el mensaje de error. Bandera `notifiedDisconnect` evita duplicarlo si
+  llegan `error` y `close` seguidos.
+- Heartbeat a nivel de aplicación: el servidor envía `{ type: "ping" }` cada 30 s (incluyendo
+  corridas pausadas, donde no hay otro tráfico). El cliente responde con `{ type: "pong" }`
+  inmediatamente y rearma un reloj de 60 s; si expira sin recibir un ping, emite
+  `{ type: "disconnected" }`. El reloj arranca con el primer ping, no al conectar — sin eso,
+  un cliente nuevo hablando con un servidor anterior (sin pings) declararía la conexión
+  muerta a los 60 s. El heartbeat es de aplicación y no de protocolo porque el navegador
+  gestiona los pings del protocolo WS de forma transparente y no los expone a JavaScript.
+- `LiveMessage` gana `ping` y `disconnected`; `ControlMessage` gana `pong` — cambio de
+  contrato en shared-types.
+
+### Changed
+- `LiveRunEntry.snapshots` pasa de `GenerationSnapshot[]` a `string[]`: el registro retiene
+  el JSON ya serializado (calculado una vez para `socket.send()`) en vez del objeto. El
+  guardado parsea al escribir a Postgres. Ganancia: 162 MB → 98 MB de heap por corrida 40×40
+  (medidos con GC forzado — corrijo los 344 MB reportados durante la investigación, que
+  incluían basura sin recolectar).
+- `markSaved` libera el array de snapshots tras guardar con éxito: los snapshots ya están en
+  Postgres, y nadie los vuelve a leer. Elimina 15 minutos de peso muerto post-guardado.
+
+### Investigación del incidente (generación 1194)
+Lo medido y descartado como causa: no existe `apps/api/src/api/ws/server.ts` (el servidor WS
+se crea en `api/server.ts` sin timeouts); `proxy_read_timeout` de nginx es 3600 s (verificado
+en el VPS); el motor tarda 10.2 ms de media por generación con 18.4 ms en el peor caso —
+ninguno es la causa. El contenedor no sufrió OOM-kill (0 eventos, RestartCount: 0).
+
+La causa raíz no se reprodujo. Lo confirmado: el sistema no tenía forma de detectar la
+desconexión — el cliente no escuchaba `close` ni `error`, así que cualquier corte de red
+dejaba la UI en "en curso" indefinidamente. Eso explica el síntoma con cualquier causa de
+desconexión.
+
+Limitación que persiste: el pico de memoria durante la corrida (98 MB para 40×40) no se
+reduce con estos cambios — los snapshots deben existir en memoria entre que la corrida
+termina y el usuario decide guardar. La solución estructural (persistir incrementalmente en
+Postgres) queda como trabajo aparte.
+
+---
+
 ## [v0.23.1] — Terminología: "Éxito reproductivo" en la grilla
 
 **Documentos afectados:** ninguno — la nota de visibilidad de RF-015 en `02-requisitos.md`
