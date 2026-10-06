@@ -99,7 +99,28 @@ export interface GenerationSnapshot {
 export type LiveMessage =
   | { readonly type: "snapshot"; readonly snapshot: GenerationSnapshot }
   | { readonly type: "done" }
-  | { readonly type: "error"; readonly message: string };
+  | { readonly type: "error"; readonly message: string }
+  /**
+   * Latido servidor → cliente cada HEARTBEAT_INTERVAL_MS, también mientras
+   * la corrida está PAUSADA — que es justo cuando no hay ningún otro
+   * tráfico y un intermediario puede cortar por inactividad.
+   *
+   * Es un mensaje de aplicación y no un ping del protocolo WebSocket
+   * porque la API del navegador NO expone los pings de protocolo a
+   * JavaScript: los responde de forma transparente y no hay evento que
+   * escuchar, así que el cliente no podría detectar su ausencia.
+   */
+  | { readonly type: "ping" }
+  /**
+   * EVENTO SINTÉTICO DEL CLIENTE — el servidor nunca lo envía.
+   *
+   * `connectToRunStream` lo emite por el mismo callback que el resto
+   * cuando el socket se cierra o falla sin haber recibido antes un
+   * "done", o cuando pasan HEARTBEAT_TIMEOUT_MS sin un "ping". Viaja por
+   * este tipo (y no por un callback aparte) para reusar el mismo `switch`
+   * de useRun que ya mapea tipo de mensaje a estado de la corrida.
+   */
+  | { readonly type: "disconnected" };
 
 /**
  * RF-023: mensajes de control, cliente → servidor, sobre el mismo WS ya
@@ -114,7 +135,9 @@ export type LiveMessage =
 export type ControlMessage =
   | { readonly type: "pause" }
   | { readonly type: "resume" }
-  | { readonly type: "setSpeed"; readonly msPerGeneration: number };
+  | { readonly type: "setSpeed"; readonly msPerGeneration: number }
+  /** Respuesta al "ping" del servidor. El servidor no la necesita para seguir transmitiendo: su valor es mantener tráfico en los dos sentidos. */
+  | { readonly type: "pong" };
 
 /** Body de `POST /runs`. Todos los campos son opcionales: el servidor aplica defaults. */
 export interface CreateRunRequest {

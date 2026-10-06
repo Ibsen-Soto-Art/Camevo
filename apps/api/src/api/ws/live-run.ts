@@ -56,6 +56,9 @@ function sleep(ms: number): Promise<void> {
  * registrado que el streaming terminó — desde ahí arranca el reloj de
  * limpieza si nadie guarda la corrida (ver el TTL en live-run-registry.ts).
  */
+/** 30s: por debajo de los cortes por inactividad habituales (~60s) y con margen para perder un latido antes de que el cliente, que espera el doble, declare la conexión muerta. */
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
 export async function streamRunLive(
   runId: string,
   config: SimulationConfig,
@@ -71,17 +74,47 @@ export async function streamRunLive(
   const state = createSimulationState(config);
   registry.attachState(runId, state);
 
+  /*
+   * Latido cada HEARTBEAT_INTERVAL_MS, independiente del bucle de
+   * generaciones: sigue latiendo mientras la corrida está PAUSADA, que es
+   * el único momento en que no hay ningún otro tráfico y un intermediario
+   * puede cortar por inactividad. Mientras transmite, los snapshots ya son
+   * tráfico de sobra — el ping es irrelevante ahí (un frame cada 30s
+   * contra ~12 snapshots por segundo).
+   *
+   * Es un mensaje de aplicación, no `socket.ping()` del protocolo: la API
+   * WebSocket del navegador no expone los pings de protocolo a JavaScript,
+   * así que el cliente no podría detectar su ausencia.
+   */
+  const heartbeat = setInterval(() => {
+    if (socket.readyState === socket.OPEN) {
+      const ping: LiveMessage = { type: "ping" };
+      socket.send(JSON.stringify(ping));
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+
   try {
     for (let i = 0; i < config.updates && !closed; i++) {
       await control.waitIfPaused();
       if (closed) break;
 
       const snapshot = advanceGeneration(state);
-      registry.appendSnapshot(runId, snapshot);
+      /*
+       * Se retiene el snapshot SERIALIZADO, no el objeto: medido en una
+       * corrida 40x40 x 1500, el registro pasa de 162 MB a 98 MB de heap
+       * retenido (-40%). El array de `organisms` es el 99% de ese peso —
+       * 1600 organismos por 1500 generaciones son 2.4 millones de objetos.
+       *
+       * El mismo string se reusa para el envío, concatenado dentro del
+       * sobre del mensaje en vez de volver a serializar los 68 KB. (No
+       * había doble serialización antes de este cambio: había una sola, y
+       * la ganancia es de memoria, no de CPU.)
+       */
+      const snapshotJson = JSON.stringify(snapshot);
+      registry.appendSnapshot(runId, snapshotJson);
 
       if (socket.readyState === socket.OPEN) {
-        const message: LiveMessage = { type: "snapshot", snapshot };
-        socket.send(JSON.stringify(message));
+        socket.send(`{"type":"snapshot","snapshot":${snapshotJson}}`);
       }
 
       if (snapshot.extinct) break;
@@ -95,6 +128,7 @@ export async function streamRunLive(
       socket.close();
     }
   } finally {
+    clearInterval(heartbeat);
     registry.markFinished(runId);
   }
 }

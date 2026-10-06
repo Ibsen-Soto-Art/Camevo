@@ -238,3 +238,128 @@ describe("streamRunLive — acumula en LiveRunRegistry en vez de escribir a Post
     expect(registry.get(runId)?.finishedAt).not.toBeNull();
   });
 });
+
+/**
+ * Retención de memoria del registro. Medido en una corrida 40x40 x 1500:
+ * retener los objetos cuesta 162 MB de heap, los strings 98 MB (-40%), y el
+ * array de `organisms` es el 99% de ese peso. En un VPS de 1.9 GB con 1.4 GB
+ * en swap, eso importa.
+ */
+describe("LiveRunRegistry — retención de snapshots (string, y liberación tras guardar)", () => {
+  function buildConfig(seed: number, updates: number): SimulationConfig {
+    return {
+      gridWidth: 5,
+      gridHeight: 5,
+      baseCyclesPerUpdate: 20,
+      mutationRate: 0.05,
+      ancestorGenomes: [createUniformGenome("replicate", 5)],
+      placementMode: "near-parent",
+      updates,
+      seed,
+    };
+  }
+
+  it("retiene los snapshots SERIALIZADOS, no los objetos", async () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    const socket = new FakeSocket();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(runId, buildConfig(1, 4), socket as any, new PlaybackControl(0), registry);
+
+    const retained = registry.get(runId)!.snapshots;
+    expect(retained.length).toBeGreaterThan(0);
+    for (const item of retained) {
+      expect(typeof item).toBe("string");
+    }
+  });
+
+  it("el string retenido es el snapshot completo y parseable, con los organismos incluidos", () => {
+    // El guardado lo parsea para escribirlo a Postgres: si el string no
+    // fuera un snapshot válido, las corridas guardadas quedarían corruptas.
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    registry.appendSnapshot(
+      runId,
+      JSON.stringify({ generation: 3, populationSize: 2, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] }),
+    );
+
+    const parsed = JSON.parse(registry.get(runId)!.snapshots[0]!) as {
+      generation: number;
+      organisms: { id: string }[];
+    };
+    expect(parsed.generation).toBe(3);
+    expect(parsed.organisms).toHaveLength(1);
+  });
+
+  it("el mismo string que se retiene es el que viaja por el socket — una sola serialización", async () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    const socket = new FakeSocket();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(runId, buildConfig(2, 3), socket as any, new PlaybackControl(0), registry);
+
+    const sentSnapshots = socket.sent.filter((m): m is Extract<LiveMessage, { type: "snapshot" }> => m.type === "snapshot");
+    const retained = registry.get(runId)!.snapshots.map((json) => JSON.parse(json) as unknown);
+    expect(retained).toEqual(sentSnapshots.map((m) => m.snapshot));
+  });
+
+  it("markSaved libera los snapshots pero conserva la entrada — `saved` tiene que seguir consultable", () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId, "browser-y");
+    registry.appendSnapshot(runId, JSON.stringify({ generation: 0 }));
+    registry.appendSnapshot(runId, JSON.stringify({ generation: 1 }));
+    registry.markFinished(runId);
+    expect(registry.get(runId)?.snapshots).toHaveLength(2);
+
+    registry.markSaved(runId);
+
+    const entry = registry.get(runId);
+    expect(entry).toBeDefined();
+    expect(entry?.snapshots).toEqual([]); // 162 MB liberados en vez de esperar 15 min de TTL
+    expect(entry?.saved).toBe(true);
+    expect(entry?.browserId).toBe("browser-y"); // los metadatos siguen, para responder alreadySaved y el 403
+  });
+
+  it("markSaved sobre un runId inexistente no revienta", () => {
+    const registry = createLiveRunRegistry();
+    expect(() => registry.markSaved(randomUUID())).not.toThrow();
+  });
+});
+
+describe("streamRunLive — latido (heartbeat)", () => {
+  it("no manda ningún ping en una corrida que termina antes del primer intervalo de 30s", async () => {
+    // Las corridas de los tests duran milisegundos: el ping no debe
+    // contaminar el stream ni los conteos de mensajes de los otros tests.
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    const socket = new FakeSocket();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(
+      runId,
+      {
+        gridWidth: 5,
+        gridHeight: 5,
+        baseCyclesPerUpdate: 20,
+        mutationRate: 0.05,
+        ancestorGenomes: [createUniformGenome("replicate", 5)],
+        placementMode: "near-parent",
+        updates: 3,
+        seed: 9,
+      },
+      socket as any,
+      new PlaybackControl(0),
+      registry,
+    );
+
+    expect(socket.sent.filter((m) => m.type === "ping")).toHaveLength(0);
+    expect(socket.sent.at(-1)?.type).toBe("done");
+  });
+});

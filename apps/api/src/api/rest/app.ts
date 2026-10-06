@@ -206,8 +206,18 @@ export function createApp(repository: RunRepository, registry: LiveRunRegistry):
       seed: entry.persistedConfig.seed,
       browserId,
     });
-    for (const snapshot of entry.snapshots) {
-      await repository.saveSnapshot(runId, snapshot.generation, snapshot as unknown as Record<string, unknown>);
+    /*
+     * El registro guarda los snapshots serializados (ver LiveRunEntry):
+     * acá se parsean para escribirlos, porque el driver `pg` necesita un
+     * objeto para la columna JSONB — pasarle el string lo almacenaría como
+     * un literal de texto JSON, no como un objeto consultable.
+     *
+     * Es el único lector de `entry.snapshots` en todo el backend, y
+     * `markSaved` los libera justo después.
+     */
+    for (const snapshotJson of entry.snapshots) {
+      const snapshot = JSON.parse(snapshotJson) as Record<string, unknown> & { generation: number };
+      await repository.saveSnapshot(runId, snapshot.generation, snapshot);
     }
 
     registry.markSaved(runId);

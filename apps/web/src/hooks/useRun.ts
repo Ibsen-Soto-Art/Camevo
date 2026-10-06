@@ -72,7 +72,24 @@ export function useRun(): RunHandle {
           } else if (message.type === "error") {
             updateStatus("error");
             setErrorMessage(message.message);
+          } else if (message.type === "disconnected") {
+            /*
+             * Evento sintético de connectToRunStream: el socket se cerró o
+             * falló sin un "done" previo, o se dejó de recibir el latido.
+             * Antes esto no existía y la corrida quedaba en "en curso"
+             * indefinidamente, sin snapshots nuevos y sin ninguna señal.
+             *
+             * Se mapea a "error" porque es el único estado que ya detiene
+             * la narrativa de la corrida y muestra el mensaje: la corrida
+             * no terminó bien, y quizá sí terminó en el servidor — de ahí
+             * la recomendación de recargar.
+             */
+            updateStatus("error");
+            setErrorMessage(
+              "Conexión perdida — la corrida puede haber terminado en el servidor. Recargá la página para ver el resultado.",
+            );
           }
+          // "ping" no llega acá: connectToRunStream lo responde y no lo propaga.
         });
       } catch (error) {
         updateStatus("error");

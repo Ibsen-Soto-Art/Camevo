@@ -84,13 +84,83 @@ export interface RunStreamHandle {
   readonly send: (message: ControlMessage) => void;
 }
 
+/**
+ * Cuánto espera el cliente un "ping" antes de dar la conexión por muerta.
+ * El doble del intervalo del servidor (HEARTBEAT_INTERVAL_MS en
+ * api/ws/live-run.ts): hacen falta DOS latidos perdidos seguidos para
+ * declararla caída, lo que evita falsos positivos por una demora puntual.
+ */
+export const HEARTBEAT_TIMEOUT_MS = 60_000;
+
+/**
+ * RF-023 + detección de desconexión: hasta ahora el único listener era
+ * "message", así que si la conexión moría a nivel TCP/WS no llegaba ningún
+ * mensaje, no había handler de cierre, y la UI quedaba en "en curso" para
+ * siempre — el síntoma exacto que se reportó en una corrida 40x40 que se
+ * detuvo en la generación 1194.
+ *
+ * Ahora se escuchan también "close" y "error", y se vigila el latido. Los
+ * tres casos desembocan en el mismo `{ type: "disconnected" }` sintético.
+ */
 export function connectToRunStream(runId: string, onMessage: (message: LiveMessage) => void): RunStreamHandle {
   const socket = new WebSocket(`${WS_BASE}/runs/${runId}/stream`);
+
+  /*
+   * Distingue el cierre NORMAL del inesperado: "close" llega también
+   * después de un "done" (el servidor cierra el socket al terminar), así
+   * que sin esta bandera toda corrida exitosa terminaría mostrando
+   * "Conexión perdida".
+   */
+  let receivedDone = false;
+  /** Evita emitir "disconnected" dos veces (p. ej. error seguido de close). */
+  let notifiedDisconnect = false;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearHeartbeat() {
+    if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer);
+    heartbeatTimer = undefined;
+  }
+
+  function notifyDisconnected() {
+    if (receivedDone || notifiedDisconnect) return;
+    notifiedDisconnect = true;
+    clearHeartbeat();
+    onMessage({ type: "disconnected" });
+  }
+
+  /** Se reinicia con cada latido recibido; si expira, la conexión está muerta aunque el socket siga “abierto”. */
+  function armHeartbeatWatchdog() {
+    clearHeartbeat();
+    heartbeatTimer = setTimeout(notifyDisconnected, HEARTBEAT_TIMEOUT_MS);
+  }
+
   socket.addEventListener("message", (event: MessageEvent<string>) => {
-    onMessage(JSON.parse(event.data) as LiveMessage);
+    const message = JSON.parse(event.data) as LiveMessage;
+
+    if (message.type === "ping") {
+      armHeartbeatWatchdog();
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "pong" } satisfies ControlMessage));
+      // El latido no es información para la UI: no se propaga hacia arriba.
+      return;
+    }
+
+    if (message.type === "done" || message.type === "error") {
+      receivedDone = true;
+      clearHeartbeat();
+    }
+    onMessage(message);
   });
+
+  socket.addEventListener("close", notifyDisconnected);
+  socket.addEventListener("error", notifyDisconnected);
+
   return {
-    close: () => socket.close(),
+    close: () => {
+      // Cierre pedido por el propio cliente: no es una desconexión.
+      receivedDone = true;
+      clearHeartbeat();
+      socket.close();
+    },
     send: (message) => socket.send(JSON.stringify(message)),
   };
 }

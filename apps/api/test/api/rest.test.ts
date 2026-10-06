@@ -146,6 +146,40 @@ describe("api/rest", () => {
       expect(body.alreadySaved).toBe(false);
     });
 
+    it("persiste los snapshots parseando los strings retenidos, y los LIBERA del registro al terminar", async () => {
+      /*
+       * Las dos mitades del FIX 3, de punta a punta por la ruta HTTP real:
+       * el registro guarda los snapshots serializados (-40% de heap), así
+       * que el guardado tiene que parsearlos para que `pg` los escriba como
+       * objeto JSONB y no como un literal de texto. Y una vez en Postgres
+       * nadie los vuelve a leer: quedarse con ellos los 15 minutos del TTL
+       * eran 162 MB de peso muerto en una corrida 40x40, medido.
+       */
+      const { runId } = (await (await postRun({})).json()) as { runId: string };
+      const snapshots = [
+        { generation: 0, populationSize: 2, organisms: [{ id: "a", x: 0, y: 0, fitness: 0 }], catastropheOccurred: false },
+        { generation: 1, populationSize: 3, organisms: [{ id: "b", x: 1, y: 0, fitness: 2 }], catastropheOccurred: true },
+      ];
+      for (const snapshot of snapshots) liveRunRegistry.appendSnapshot(runId, JSON.stringify(snapshot));
+      expect(liveRunRegistry.get(runId)?.snapshots).toHaveLength(2);
+
+      expect((await saveRun(runId)).status).toBe(201);
+
+      // Lo persistido es el objeto completo, no el string: si `pg` hubiera
+      // recibido el string, esto vendría como texto y no se podría leer.
+      const loaded = (await (
+        await fetch(`${baseUrl}/runs/${runId}`, { headers: { "X-Browser-ID": BROWSER_A } })
+      ).json()) as { snapshots: { generation: number; organisms: { id: string }[]; catastropheOccurred: boolean }[] };
+      expect(loaded.snapshots).toHaveLength(2);
+      expect(loaded.snapshots[0]?.organisms[0]?.id).toBe("a");
+      expect(loaded.snapshots[1]?.catastropheOccurred).toBe(true);
+
+      // Y el registro los soltó, sin perder la entrada ni el flag.
+      const entry = liveRunRegistry.get(runId);
+      expect(entry?.snapshots).toEqual([]);
+      expect(entry?.saved).toBe(true);
+    });
+
     it("un segundo click (ya guardada) responde 200 con alreadySaved:true, sin duplicar ni fallar", async () => {
       const { runId } = (await (await postRun({})).json()) as { runId: string };
       await saveRun(runId);

@@ -1,4 +1,4 @@
-import type { GenerationSnapshot, PersistedRunConfig } from "@camevo/shared-types";
+import type { PersistedRunConfig } from "@camevo/shared-types";
 import type { SimulationState } from "../simulation/orchestrator/run";
 
 /**
@@ -57,7 +57,22 @@ export interface LiveRunEntry {
   readonly browserId: string;
   readonly persistedConfig: PersistedRunConfig;
   state: SimulationState | null;
-  readonly snapshots: GenerationSnapshot[];
+  /**
+   * Snapshots SERIALIZADOS, en orden de generación — no los objetos.
+   *
+   * Medido en una corrida 40x40 x 1500: retener los objetos cuesta 162 MB
+   * de heap, los strings 98 MB (-40%). El array de `organisms` es el 99%
+   * de ese peso (1600 organismos x 1500 generaciones = 2.4 millones de
+   * objetos), y no se puede descartar porque es lo que `POST /save`
+   * persiste para que una corrida guardada pueda dibujar su grilla
+   * (RF-025). El string es la única forma de aligerarlo sin perder nada.
+   *
+   * `api/ws/live-run.ts` ya serializa cada snapshot para enviarlo por el
+   * socket, así que reusa ese mismo string. El único lector es el bucle de
+   * escritura de `POST /save`, que parsea al escribir a Postgres (el
+   * driver `pg` necesita un objeto para la columna JSONB).
+   */
+  snapshots: string[];
   saved: boolean;
   finishedAt: number | null;
 }
@@ -65,7 +80,8 @@ export interface LiveRunEntry {
 export interface LiveRunRegistry {
   createPending(runId: string, browserId: string, persistedConfig: PersistedRunConfig): void;
   attachState(runId: string, state: SimulationState): void;
-  appendSnapshot(runId: string, snapshot: GenerationSnapshot): void;
+  /** Recibe el snapshot YA serializado — ver el comentario de `snapshots` en LiveRunEntry. */
+  appendSnapshot(runId: string, snapshotJson: string): void;
   markFinished(runId: string): void;
   markSaved(runId: string): void;
   get(runId: string): LiveRunEntry | undefined;
@@ -102,8 +118,8 @@ export function createLiveRunRegistry(): LiveRunRegistry {
       const entry = runs.get(runId);
       if (entry) entry.state = state;
     },
-    appendSnapshot(runId, snapshot) {
-      runs.get(runId)?.snapshots.push(snapshot);
+    appendSnapshot(runId, snapshotJson) {
+      runs.get(runId)?.snapshots.push(snapshotJson);
     },
     markFinished(runId) {
       const entry = runs.get(runId);
@@ -111,7 +127,20 @@ export function createLiveRunRegistry(): LiveRunRegistry {
     },
     markSaved(runId) {
       const entry = runs.get(runId);
-      if (entry) entry.saved = true;
+      if (!entry) return;
+      entry.saved = true;
+      /*
+       * Los snapshots ya están en Postgres y nadie los vuelve a leer: su
+       * único consumidor es el bucle de escritura de `POST /save`, que
+       * terminó justo antes de llamar acá, y un segundo intento sale por
+       * `alreadySaved` sin tocarlos. Sin esto quedaban retenidos los 15
+       * minutos del TTL — medido, 162 MB de peso muerto por una corrida
+       * 40x40 en un VPS de 1.9 GB.
+       *
+       * La entrada NO se borra: `saved` tiene que seguir consultable para
+       * responder `alreadySaved: true`.
+       */
+      entry.snapshots = [];
     },
     get(runId) {
       return runs.get(runId);
