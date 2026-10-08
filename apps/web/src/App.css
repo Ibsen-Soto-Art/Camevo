@@ -85,7 +85,44 @@
   .app-layout {
     grid-template-columns: minmax(280px, 30%) 1fr;
   }
+
+  /*
+   * Formulario colapsado: la columna de contenido se queda con todo el
+   * ancho. El `<details>` de configuración vive dentro de
+   * `.controls-column`, así que `:has()` lo alcanza sin ayuda de React.
+   *
+   * El selector nombra la clase `.config-details` además de acotar a la
+   * columna: hoy es el único `<details>` del árbol, pero un "opciones
+   * avanzadas" plegable que alguien agregara ahí adentro colapsaría el
+   * layout cada vez que estuviera cerrado si el selector dijera solo
+   * `.controls-column details`. Nombrar el panel concreto hace que ese
+   * caso no pueda pasar en silencio.
+   *
+   * Sin ayuda de React — que es la única forma que funciona acá: `open` se pasa como
+   * valor inicial junto a un `key`, no hay `onToggle`, y cuando el usuario
+   * abre o cierra el panel React no se entera. Una clase puesta desde
+   * React exigiría agregar ese handler y un estado nuevo para algo que el
+   * DOM ya sabe.
+   *
+   * Degradación: en un navegador sin `:has()` el selector simplemente no
+   * matchea y el layout se queda en 30/70, que es el comportamiento
+   * actual. El modo de falla es "no pasa nada", no "se rompe".
+   *
+   * SIN TRANSICIÓN, y no por omisión: `grid-template-columns` solo
+   * interpola entre listas de pistas compatibles, y acá el conteo cambia
+   * de 2 a 1. Medido con una sonda en navegador real: a los 100ms de un
+   * `transition: grid-template-columns 200ms` el valor calculado ya era el
+   * final (`1200px`), o sea que salta. Conservar dos pistas para poder
+   * animar (`0px 1fr`) dejaría la primera columna sin ancho y el
+   * `<summary>` quedaría invisible — sin forma de volver a abrir el
+   * formulario. El salto es el precio de que el panel siga siendo
+   * clickeable.
+   */
+  .app-layout:has(.controls-column .config-details:not([open])) {
+    grid-template-columns: 1fr;
+  }
 }
+
 
 .controls-column {
   display: flex;

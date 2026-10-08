@@ -16,6 +16,25 @@ const VIEWPORTS = [
   { label: "1280px (desktop)", width: 1280, height: 900 },
 ];
 
+/** Layout de columnas con el formulario abierto: 30/70 en desktop, apiladas en mobile. */
+async function assertColumnLayout(page: Page, viewportWidth: number) {
+  const controlsBox = await page.locator(".controls-column").boundingBox();
+  const contentBox = await page.locator(".content-column").boundingBox();
+  expect(controlsBox).not.toBeNull();
+  expect(contentBox).not.toBeNull();
+
+  if (viewportWidth >= 900) {
+    // Dos columnas lado a lado (30/70 aprobado): misma fila, controles entre 20-40% del ancho combinado.
+    expect(Math.abs(controlsBox!.y - contentBox!.y)).toBeLessThan(20);
+    const controlsRatio = controlsBox!.width / (controlsBox!.width + contentBox!.width);
+    expect(controlsRatio).toBeGreaterThan(0.2);
+    expect(controlsRatio).toBeLessThan(0.4);
+  } else {
+    // Apiladas: el contenido arranca debajo de los controles, no al lado.
+    expect(contentBox!.y).toBeGreaterThanOrEqual(controlsBox!.y + controlsBox!.height - 5);
+  }
+}
+
 async function hasHorizontalOverflow(page: Page): Promise<boolean> {
   return page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
 }
@@ -56,6 +75,17 @@ for (const viewport of VIEWPORTS) {
       await page.goto("/");
       expect(await hasHorizontalOverflow(page)).toBe(false);
 
+      /*
+       * El layout 30/70 aprobado en Grupo 2 se mide con el formulario
+       * ABIERTO, que es su estado al entrar. Antes esto se verificaba
+       * después de arrancar la corrida, pero arrancarla colapsa el
+       * formulario y desde entonces la columna de contenido pasa a ocupar
+       * todo el ancho (ver layout-collapsed-config.spec.ts) — la aserción
+       * de dos columnas ahí habría quedado afirmando un comportamiento que
+       * ya no es el de ese momento.
+       */
+      await assertColumnLayout(page, viewport.width);
+
       await runShortSimulation(page);
       expect(await hasHorizontalOverflow(page)).toBe(false);
 
@@ -72,21 +102,6 @@ for (const viewport of VIEWPORTS) {
       expect(explanatoryIndex).toBeGreaterThan(-1);
       expect(saveIndex).toBeGreaterThan(explanatoryIndex);
 
-      const controlsBox = await page.locator(".controls-column").boundingBox();
-      const contentBox = await page.locator(".content-column").boundingBox();
-      expect(controlsBox).not.toBeNull();
-      expect(contentBox).not.toBeNull();
-
-      if (viewport.width >= 900) {
-        // Dos columnas lado a lado (30/70 aprobado): misma fila, controles entre 20-40% del ancho combinado.
-        expect(Math.abs(controlsBox!.y - contentBox!.y)).toBeLessThan(20);
-        const controlsRatio = controlsBox!.width / (controlsBox!.width + contentBox!.width);
-        expect(controlsRatio).toBeGreaterThan(0.2);
-        expect(controlsRatio).toBeLessThan(0.4);
-      } else {
-        // Apiladas: el contenido arranca debajo de los controles, no al lado.
-        expect(contentBox!.y).toBeGreaterThanOrEqual(controlsBox!.y + controlsBox!.height - 5);
-      }
     });
 
     test("modo 'live-compare': dos corridas en paralelo renderizan sin overflow horizontal", async ({ page }) => {
