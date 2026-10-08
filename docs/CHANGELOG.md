@@ -6,6 +6,83 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.25.0] — Tareas lógicas resueltas en el panel de hover
+
+**Documentos afectados:** ninguno — `tasksSolvedThisUpdate` ya estaba en `GenerationSnapshot`
+desde el principio; este cambio solo lo muestra.
+
+### Added
+- Panel de hover muestra "Tareas lógicas resueltas: N" por generación, inmediatamente después
+  de Fitness/Población — la contradicción entre fitness alto y cero tareas resueltas debe
+  verse en la misma mirada, no después de scrollear.
+- Cuando N === 0: glosa "ningún organismo resolvió AND, NOT u OR en esta generación" — el cero
+  habla solo pero sin contexto es ambiguo (es normal en generaciones tempranas, es el problema
+  en las tardías con mutación alta).
+- Sin color de alerta: pintarlo de rojo mentiría en generaciones tempranas donde el cero es
+  esperado.
+- Caption que define la métrica: "cantidad de veces que algún organismo resolvió correctamente
+  una tarea lógica en esta generación. Puede quedar en cero mientras el fitness promedio
+  sube — son dos cosas distintas". No existía ninguna descripción de esto en el gráfico: la
+  única mención a tareas lógicas en toda la interfaz estaba en el panel de inspección de un
+  organismo.
+
+### Fixed
+- Carrera en el handler de pong: entre leer `readyState` y enviar, el socket puede cerrarse y
+  `send` lanza `InvalidStateError`. Al correr dentro del listener de "message", esa excepción
+  quedaría sin atrapar y el navegador la registraría como error de consola. Cerrado con
+  `try/catch`; el pong es cortesía, no protocolo crítico — un fallo silencioso es correcto.
+  Contexto honesto: un fallo en UNA corrida completa de la suite (`smoke.spec.ts` y
+  `fase6.spec.ts`, las dos por `expect(consoleErrors).toEqual([])`), no reproducido en cuatro
+  corridas completas posteriores y sin texto de error capturado. Era la única ruta nueva capaz
+  de producirlo y quedó cerrada, pero no puede afirmarse que fuera la causa.
+
+### Anti-correlación medida que motivó el cambio
+20×20, velocidad Moderada, catástrofes activas, 1500 generaciones, una semilla por fila:
+
+| mutación | ratio fitness tardío/temprano | tareas/generación (mediana) | total de la corrida | generaciones con 0 tareas |
+|---|---|---|---|---|
+| 0.0 | 1.01 | 72 | 108.276 | 0% |
+| 0.05 (default) | 1.98 | 60 | 90.052 | 0% |
+| 0.3 | 1.24 | 0 | 264 | 91% |
+| 0.7 | 1.49 | 0 | 104 | 93% |
+| **1.0** | **2.03** | **0** | **229** | **87%** |
+
+No es solo una señal engañosa: está **anti-correlacionada en los extremos**. Mutación 1.0 da el
+ratio más alto de la tabla —el que mejor se lee— con el 87% de las generaciones en cero tareas;
+mutación 0 da el más chato —el que peor se lee— con la mejor adaptación funcional de todas.
+
+Varianza entre semillas con mutación 1.0 (mismas condiciones, 5 semillas):
+
+| semilla | ratio tardío/temprano | tareas en gen 1 | tareas en gen 1499 | total de la corrida | generaciones con 0 tareas |
+|---|---|---|---|---|---|
+| 11 | 2.03 | 0 | 0 | 229 | 87% |
+| 22 | 1.47 | 0 | 0 | 249 | 85% |
+| 33 | 2.18 | 0 | 0 | 220 | 86% |
+| 44 | 2.90 | 0 | 1 | 241 | 85% |
+| 55 | 1.87 | 1 | 0 | 247 | 85% |
+
+El mecanismo: con mutación 1.0 los organismos se replican y se reemplazan constantemente
+(liberando celdas, lo que infla `births / populationSize`) pero casi nunca resuelven tareas.
+
+**Corrección de unidades del diagnóstico previo:** los ~90.000 y los ~230 que se citaron son
+**totales de toda la corrida**, no valores por generación, y pertenecen a **escenarios
+distintos** — 90.052 es el total con mutación 0.05 y 229 el total con mutación 1.0. Por
+generación, una corrida con mutación 1.0 está en 0 o 1 tarea (ver la tabla de semillas). Las
+cifras "92" y "0.09" del reporte original eran esos totales divididos por mil.
+
+### Premisas corregidas
+- `tasksSolvedThisUpdate` ya llegaba al cliente sin usarse — está en `GenerationSnapshot` desde
+  el commit que creó `packages/shared-types`. Sin contrato nuevo, sin cambio de motor, sin
+  payload adicional, sin compatibilidad hacia atrás. Más barato que `catastropheDeaths` (v0.22.0)
+  por exactamente esa razón: ahí hubo que agregar el campo al contrato y capturar en el motor un
+  valor que se descartaba.
+
+**Motivo:** con tasa de mutación alta, el gráfico de fitness mandaba la señal invertida — subía
+mientras la adaptación funcional colapsaba. El panel ahora permite ver la contradicción
+directamente, sin necesidad de entender la mecánica interna.
+
+---
+
 ## [v0.24.0] — Resiliencia del WebSocket: detección de desconexión, heartbeat y memoria
 
 **Documentos afectados:** `03-arquitectura.md` (v1.4 → v1.5 — fila nueva en tabla de
