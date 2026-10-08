@@ -23,6 +23,21 @@ const POPULATION_KEY = "populationSize";
 export const CATASTROPHE_DEATHS_KEY = "catastropheDeaths";
 
 /**
+ * Tareas lógicas resueltas en la generación. Tampoco es una serie del
+ * gráfico: es el contrapeso de "Fitness promedio" en el panel de valores.
+ *
+ * Existe porque `averageFitness` (nacimientos / población) puede estar
+ * ANTI-correlacionado con la adaptación funcional. Medido en 20x20,
+ * Moderada, catástrofes activas, 1500 generaciones y misma semilla: con
+ * mutación 1.0 el fitness tardío/temprano da 2.03 —el más alto de toda la
+ * tabla— mientras el 87% de las generaciones resuelven CERO tareas; y con
+ * mutación 0 da 1.01 —el más chato— con la mejor adaptación funcional de
+ * todas (108.276 tareas, mediana 72 por generación). Un visitante que solo
+ * mire la curva subir se lleva la conclusión opuesta a la real.
+ */
+export const TASKS_SOLVED_KEY = "tasksSolvedThisUpdate";
+
+/**
  * Ancho que Recharts necesita por cada columna de ticks a la derecha.
  * "Clima" y "Población" son los dos ejes `orientation="right"` y se
  * apilan hacia afuera, así que el margen derecho depende de CUÁNTOS hay
@@ -107,6 +122,16 @@ export function toChartRows(snapshots: readonly GenerationSnapshot[]): Record<st
        * claves referenciadas por un `<Line dataKey>`.
        */
       [CATASTROPHE_DEATHS_KEY]: snapshot.catastropheDeaths ?? 0,
+      /*
+       * `?? 0` por intención, no por compatibilidad: este campo existe en
+       * `GenerationSnapshot` desde el principio, así que ninguna corrida
+       * guardada puede traerlo ausente. Se deja igual porque la fila es un
+       * `Record<string, number>` y un `undefined` que se colara mostraría
+       * "Tareas lógicas resueltas: undefined" en vez de un número — el
+       * mismo defecto que el `?? 0` de catastropheDeaths previene de
+       * verdad. Es una red de seguridad explícita, no un parche histórico.
+       */
+      [TASKS_SOLVED_KEY]: snapshot.tasksSolvedThisUpdate ?? 0,
     };
     for (const resource of snapshot.climate) {
       row[resource.taskId] = resource.rewardMultiplier;
@@ -593,6 +618,19 @@ export default function RunChart({ snapshots, height = 380, onHoverGeneration }:
                       ))}
                     </p>
                   )}
+                  {/*
+                    Va INMEDIATAMENTE después de la fila de Fitness y
+                    Población, no al final: su razón de existir es que la
+                    contradicción con "Fitness promedio" sea inevitable en
+                    la misma mirada. Se muestra siempre que haya una
+                    generación bajo el cursor, sin depender de la leyenda:
+                    no es una serie del gráfico y no se puede ocultar.
+                  */}
+                  <p className="chart-values-tasks">
+                    Tareas lógicas resueltas: {hoveredRow[TASKS_SOLVED_KEY] ?? 0}
+                    {(hoveredRow[TASKS_SOLVED_KEY] ?? 0) === 0 &&
+                      " — ningún organismo resolvió AND, NOT u OR en esta generación."}
+                  </p>
                   {climate.length > 0 && (
                     <p className="chart-values-row">
                       {climate.map((s) => (
@@ -636,6 +674,17 @@ export default function RunChart({ snapshots, height = 380, onHoverGeneration }:
         <strong>Fitness promedio</strong>: tasa de nacimientos por organismo en esta generación — indica qué tan bien se
         está adaptando la POBLACIÓN en este momento. No confundir con el éxito reproductivo individual que muestra la
         grilla, que es acumulado desde que nació cada organismo.
+      </p>
+      {/*
+        CAMBIO 3: no existía ninguna descripción de esta métrica en el
+        gráfico — la única mención a tareas lógicas en toda la UI estaba en
+        el panel de inspección de un organismo. Va junto a la definición de
+        "Fitness promedio" porque las dos se leen en el mismo panel y es la
+        comparación entre ambas la que importa.
+      */}
+      <p className="chart-caption">
+        <strong>Tareas lógicas resueltas</strong>: cantidad de veces que algún organismo resolvió correctamente una tarea
+        lógica en esta generación. Puede quedar en cero mientras el fitness promedio sube — son dos cosas distintas.
       </p>
       <p className="chart-caption">
         La diversidad genética es una aproximación: compara genomas por posición sin alinearlos, así que una parte del

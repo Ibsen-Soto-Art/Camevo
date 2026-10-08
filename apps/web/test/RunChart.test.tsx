@@ -2,6 +2,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import RunChart, {
   CATASTROPHE_DEATHS_KEY,
+  TASKS_SOLVED_KEY,
   DEFAULT_HIDDEN_KEYS,
   buildSeriesList,
   hasVisibleClimateSeries,
@@ -39,8 +40,8 @@ describe("toChartRows — incluye populationSize (línea 'Población viva')", ()
     // `toEqual` exhaustivo a propósito: si el aplanado gana una clave sin
     // que nadie lo note, este test lo dice.
     expect(rows).toEqual([
-      { generation: 0, averageFitness: 1, geneticDiversity: 0.1, populationSize: 400, catastropheDeaths: 0 },
-      { generation: 1, averageFitness: 1.1, geneticDiversity: 0.12, populationSize: 42, catastropheDeaths: 0 },
+      { generation: 0, averageFitness: 1, geneticDiversity: 0.1, populationSize: 400, catastropheDeaths: 0, tasksSolvedThisUpdate: 0 },
+      { generation: 1, averageFitness: 1.1, geneticDiversity: 0.12, populationSize: 42, catastropheDeaths: 0, tasksSolvedThisUpdate: 0 },
     ]);
   });
 
@@ -273,5 +274,52 @@ describe("<RunChart /> — define qué mide 'Fitness promedio' y lo distingue de
     // y la definición ya se puede leer.
     expect(container.textContent).toMatch(/pasá el mouse sobre el gráfico para ver los valores/i);
     expect(container.querySelectorAll(".chart-caption").length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/**
+ * Hallazgo ④ de la auditoría exploratoria del 29/09: `averageFitness`
+ * (nacimientos / población) puede estar ANTI-correlacionado con la
+ * adaptación funcional. Medido en 20x20, Moderada, catástrofes activas,
+ * 1500 generaciones, misma semilla: con mutación 1.0 el fitness
+ * tardío/temprano da 2.03 —el más alto de la tabla— mientras el 87% de las
+ * generaciones resuelven CERO tareas lógicas; con mutación 0 da 1.01 —el
+ * más chato— con 108.276 tareas (mediana 72 por generación).
+ *
+ * `tasksSolvedThisUpdate` ya viajaba en cada snapshot desde el principio:
+ * lo único que faltaba era leerlo.
+ */
+describe("toChartRows + panel de valores — tareas lógicas resueltas (hallazgo ④)", () => {
+  it("el aplanado preserva tasksSolvedThisUpdate", () => {
+    const rows = toChartRows([
+      snapshot({ generation: 0, tasksSolvedThisUpdate: 72 }),
+      snapshot({ generation: 1, tasksSolvedThisUpdate: 0 }),
+    ]);
+    expect(rows[0]?.[TASKS_SOLVED_KEY]).toBe(72);
+    expect(rows[1]?.[TASKS_SOLVED_KEY]).toBe(0);
+  });
+
+  it("si el campo llegara ausente se lee como 0, no como undefined", () => {
+    // Red de seguridad, no compatibilidad: el campo existe en
+    // GenerationSnapshot desde el principio. Pero un `undefined` que se
+    // colara mostraría "Tareas lógicas resueltas: undefined".
+    const legacy = { ...snapshot({ generation: 4 }) } as Record<string, unknown>;
+    delete legacy.tasksSolvedThisUpdate;
+
+    const rows = toChartRows([legacy as unknown as GenerationSnapshot]);
+    expect(rows[0]?.[TASKS_SOLVED_KEY]).toBe(0);
+    expect(Number.isNaN(rows[0]?.[TASKS_SOLVED_KEY])).toBe(false);
+  });
+
+  it("la clave no crea una serie en el gráfico", () => {
+    const keys = buildSeriesList(["AND", "NOT", "OR"]).map((s) => s.dataKey);
+    expect(keys).not.toContain(TASKS_SOLVED_KEY);
+    expect(DEFAULT_HIDDEN_KEYS).not.toContain(TASKS_SOLVED_KEY);
+  });
+
+  it("el caption define qué mide y advierte que puede quedar en cero mientras el fitness sube", () => {
+    const { container } = render(<RunChart snapshots={[snapshot({ generation: 0 })]} />);
+    expect(container.textContent).toMatch(/cantidad de veces que algún organismo resolvió correctamente una tarea lógica/i);
+    expect(container.textContent).toMatch(/puede quedar en cero mientras el fitness promedio sube/i);
   });
 });

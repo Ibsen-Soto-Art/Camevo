@@ -163,6 +163,23 @@ describe("connectToRunStream — latido (heartbeat)", () => {
     expect(received.map((m) => m.type)).toEqual(["done"]);
   });
 
+  it("si el socket se cierra entre el chequeo y el envío, el pong falla en silencio sin lanzar", () => {
+    /*
+     * Carrera real: `send` lanza InvalidStateError sobre un socket cerrado,
+     * y al correr dentro del listener de "message" esa excepción quedaría
+     * sin atrapar — el navegador la registraría como error de consola.
+     */
+    const { received, socket } = openStream();
+    socket.send = () => {
+      throw new Error("InvalidStateError: still in CONNECTING state");
+    };
+
+    expect(() => socket.receive({ type: "ping" })).not.toThrow();
+    // Y el reloj igual quedó armado: la conexión se evalúa por el latido, no por el pong.
+    vi.advanceTimersByTime(HEARTBEAT_TIMEOUT_MS);
+    expect(received.map((m) => m.type)).toEqual(["disconnected"]);
+  });
+
   it("el timeout del cliente es el doble del intervalo del servidor (30s), para tolerar un latido perdido", () => {
     expect(HEARTBEAT_TIMEOUT_MS).toBe(60_000);
   });

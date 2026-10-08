@@ -139,7 +139,25 @@ export function connectToRunStream(runId: string, onMessage: (message: LiveMessa
 
     if (message.type === "ping") {
       armHeartbeatWatchdog();
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "pong" } satisfies ControlMessage));
+      /*
+       * El chequeo de `readyState` no alcanza: entre leerlo y enviar, el
+       * socket puede cerrarse (navegación, corte de red, cierre del
+       * servidor) y `send` lanza InvalidStateError. Como esto corre dentro
+       * del listener de "message", esa excepción quedaría sin atrapar y el
+       * navegador la registraría como error de consola.
+       *
+       * El pong es fire-and-forget: el servidor no lo necesita para seguir
+       * transmitiendo, su único valor es mantener tráfico en los dos
+       * sentidos. No poder enviarlo nunca debe romper nada — y si el socket
+       * ya está cerrado, el watchdog o el evento "close" se encargan.
+       */
+      try {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "pong" } satisfies ControlMessage));
+        }
+      } catch {
+        /* socket cerrado entre el chequeo y el envío: nada que hacer */
+      }
       // El latido no es información para la UI: no se propaga hacia arriba.
       return;
     }
