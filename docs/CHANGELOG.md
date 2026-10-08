@@ -6,6 +6,50 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.25.1] — Layout expansible al colapsar el formulario
+
+**Documentos afectados:** `03-arquitectura.md` (v1.5 → v1.6 — fila nueva en §5: CSS `:has()`
+en vez de estado React para el layout expansible).
+
+### Changed
+- Cuando el formulario de configuración está colapsado, la columna derecha (gráfica + grilla +
+  panel explicativo) ocupa el ancho completo en vez del 70% fijo. Medido a 1280px: el área de
+  trazado del gráfico pasa de 612px a 996px (+63%). Al colapsar, el `<summary>` pasa a una
+  barra de ancho completo sobre el contenido — mismo patrón que el apilado en móvil, y es lo
+  que lo mantiene clickeable para reabrir. En modo comparación en vivo, los dos paneles se
+  ensanchan juntos. En modo comparación de guardadas, sin efecto (ese modo no usa
+  `.app-layout`).
+- Implementado con dos líneas de CSS (`:has()`) sin estado nuevo en React — React no conoce el
+  atributo `open` del `<details>` (se inicializa junto a una `key` derivada de si ya arrancó
+  una corrida y del preset elegido, sin `onToggle`). La alternativa era cablear un handler y un
+  estado para algo que el DOM ya sabe. Degradación sin `:has()`: layout fijo de dos columnas,
+  sin pérdida de funcionalidad. El selector nombra `.config-details` además de acotar a
+  `.controls-column`, para que un segundo `<details>` agregado ahí adentro no colapse el layout
+  cada vez que esté cerrado.
+- Sin transición animada: `grid-template-columns` no interpola con cambio de conteo de pistas —
+  medido, a los 100ms de un `transition ... 200ms` el valor calculado ya era el final.
+  Conservar dos pistas para animar (`0px 1fr`) dejaría el `<summary>` invisible.
+
+### Premisas corregidas por medición
+- No hace falta recalcular `margin.right` al expandir: el hueco derecho es idéntico en los dos
+  estados (180px) aunque el SVG pase de 782px a 1166px, con cero labels recortados.
+  `ResponsiveContainer` re-mide solo con su propio ResizeObserver; agregar uno en `RunChart`
+  habría sido maquinaria duplicada. Queda un test que fija esa invariante.
+- `:has()` sí aplica en comparación EN VIVO (mismo `.app-layout`, mismo `.controls-column`,
+  mismo `<details>`). Solo las guardadas quedan fuera, por estructura diferente.
+
+### Fix colateral
+- Test de ancho del gráfico fallaba en una corrida de cada seis: medía el área de trazado
+  inmediatamente tras el toggle, antes de que `ResponsiveContainer` re-midiera (el reflujo y su
+  re-medición son asíncronos). Corregido con un helper `settledPlotWidth` que espera a que el
+  valor deje de moverse, en vez de aflojar la aserción a una comparación aproximada.
+- `redesign.spec.ts` verificaba el layout 30/70 DESPUÉS de arrancar la corrida, que es justo
+  cuando el formulario se colapsa: codificaba el comportamiento viejo. La verificación se movió
+  al momento en que el formulario está abierto, extraída a un helper, sin aflojar ninguna
+  aserción.
+
+---
+
 ## [v0.25.0] — Tareas lógicas resueltas en el panel de hover
 
 **Documentos afectados:** ninguno — `tasksSolvedThisUpdate` ya estaba en `GenerationSnapshot`
