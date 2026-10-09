@@ -562,6 +562,86 @@
   width: 100%;
 }
 
+/* Dentro de una pestaña no hay nada arriba de lo que separarse: el borde y
+   el espacio existían para despegar la grilla del gráfico cuando estaban
+   apilados. Dejarlos además metía 21px de alto residual en la pestaña
+   inactiva (medido), visibles como un hueco fantasma. */
+.run-tabpanel .population-grid {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Pestañas de "Una corrida". Botones nativos a propósito: Tab y
+   Enter/Espacio ya funcionan sin un keydown handler propio. */
+.run-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.run-tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  padding: 0.6rem 1.1rem;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.run-tab:hover {
+  color: var(--color-text);
+}
+
+.run-tab-active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.run-tab:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/*
+ * La pestaña ACTIVA queda en el flujo normal, así que su alto gobierna el
+ * del contenedor — por eso no hace falta un `min-height` con un número
+ * mágico, que con un gráfico de ~900px y una grilla de ~870px iba a
+ * recortar o a dejar un hueco según cuál estuviera activa.
+ */
+.run-tabpanels {
+  position: relative;
+}
+
+/*
+ * La pestaña INACTIVA sale del flujo pero sigue MONTADA Y MEDIBLE:
+ * `opacity: 0` no afecta al layout, así que el ResizeObserver de
+ * PopulationGrid y el ResponsiveContainer de RunChart siguen viendo su
+ * ancho real y la sincronización con el hover del gráfico no se corta.
+ *
+ * `left/right: 0` es obligatorio: sin eso un elemento absoluto toma ancho
+ * shrink-to-fit y la grilla mediría un ancho equivocado.
+ *
+ * El `inert` que acompaña va en el JSX, no acá: `opacity: 0` NO saca el
+ * contenido del orden de tabulación ni del árbol de accesibilidad.
+ */
+.run-tabpanel-inactive {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .population-grid-canvas-wrap {
   position: relative;
   display: inline-block;

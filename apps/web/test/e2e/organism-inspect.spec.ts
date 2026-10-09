@@ -25,8 +25,29 @@ async function setupOneCellGrid(page: Page, generations: number, msPerGeneration
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
 }
 
+/**
+ * La grilla vive en la pestaña "Población", que no es la activa por defecto
+ * — y la pestaña inactiva tiene `pointer-events: none` e `inert`, así que
+ * sin esto el click nunca llega al canvas. Es un paso real del usuario, no
+ * un rodeo del test.
+ */
+async function openPopulationTab(page: Page): Promise<void> {
+  /*
+   * Hay que ESPERAR la pestaña, no saltearla si todavía no está: las
+   * pestañas aparecen recién con el primer snapshot, y el estado pasa a "en
+   * curso" antes de eso (updateStatus corre antes de que resuelva
+   * createRun). Sin la espera, el click caía sobre un canvas que seguía en
+   * la pestaña inactiva, con pointer-events: none.
+   */
+  const tab = page.getByRole("tab", { name: "Población" });
+  await tab.waitFor({ state: "visible", timeout: 20_000 });
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+}
+
 /** Clickea las 4 celdas de una grilla 2x2 en orden hasta que el panel deje de decir "Hábitat vacío". */
 async function clickUntilOrganismFound(page: Page, canvas: Locator): Promise<void> {
+  await openPopulationTab(page);
   const box = (await canvas.boundingBox())!;
   const positions = [
     { x: box.width * 0.25, y: box.height * 0.25 },

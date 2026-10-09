@@ -89,18 +89,28 @@ for (const viewport of VIEWPORTS) {
       await runShortSimulation(page);
       expect(await hasHorizontalOverflow(page)).toBe(false);
 
-      // Orden real en el DOM dentro de .run-panel: el bloque de guardado
-      // (.save-run) debe aparecer DESPUÉS del panel explicativo — la
-      // reubicación aprobada como "cierre de la narrativa", no pegado al
-      // status-line de arriba.
-      const classOrder = await page.evaluate(() => {
-        const panel = document.querySelector(".run-panel");
-        return panel ? Array.from(panel.children).map((el) => el.className) : [];
+      /*
+       * Orden real en el DOM: el bloque de guardado (.save-run) debe
+       * aparecer DESPUÉS del panel explicativo — la reubicación aprobada
+       * como "cierre de la narrativa", no pegado al status-line de arriba.
+       *
+       * Se compara con `compareDocumentPosition` en vez de buscar entre los
+       * hijos directos de `.run-panel`: los dos pasaron a vivir dentro del
+       * `role="tabpanel"` de "Gráfica", así que ya no son hermanos del panel
+       * raíz. La intención no cambia y la aserción deja de depender de a qué
+       * profundidad estén.
+       */
+      const order = await page.evaluate(() => {
+        const explanatory = document.querySelector(".explanatory-panel");
+        const save = document.querySelector(".save-run");
+        if (!explanatory || !save) return { found: false, saveAfter: false };
+        return {
+          found: true,
+          saveAfter: (explanatory.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+        };
       });
-      const explanatoryIndex = classOrder.findIndex((c) => c.includes("explanatory-panel"));
-      const saveIndex = classOrder.findIndex((c) => c.includes("save-run"));
-      expect(explanatoryIndex).toBeGreaterThan(-1);
-      expect(saveIndex).toBeGreaterThan(explanatoryIndex);
+      expect(order.found).toBe(true);
+      expect(order.saveAfter).toBe(true);
 
     });
 

@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import RunPanel from "../src/components/RunPanel";
@@ -336,5 +337,148 @@ describe("<RunPanel /> — el estado de la corrida se muestra en español", () =
   it("status 'idle': no se muestra la línea de estado — una corrida que no arrancó no tiene nada que informar", () => {
     const { container } = renderWithStatus("idle");
     expect(container.querySelector(".status-line")).toBeNull();
+  });
+});
+
+/**
+ * Pestañas de "Una corrida". La pestaña inactiva NO se desmonta: sale del
+ * flujo con `position: absolute; opacity: 0` para que el ResizeObserver de
+ * PopulationGrid y el ResponsiveContainer de RunChart sigan midiendo, y la
+ * sincronización con el hover del gráfico no se corte. Lo que no se puede
+ * verificar en jsdom (sin layout real) vive en
+ * test/e2e/run-panel-tabs.spec.ts.
+ */
+describe("<RunPanel /> — pestañas Gráfica / Población", () => {
+  function renderTabbed(overrides: Partial<Parameters<typeof RunPanel>[0]> = {}) {
+    return render(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={historicalRunHandle([snapshot({ generation: 0 }), snapshot({ generation: 1 })])}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+        tabbed
+        {...overrides}
+      />,
+    );
+  }
+
+  it("arranca en 'Gráfica', con aria-selected correcto en las dos pestañas", () => {
+    renderTabbed();
+    expect(screen.getByRole("tab", { name: "Gráfica" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Población" })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("al cambiar de pestaña, aria-selected se invierte", async () => {
+    renderTabbed();
+    await userEvent.click(screen.getByRole("tab", { name: "Población" }));
+
+    expect(screen.getByRole("tab", { name: "Población" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Gráfica" })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("las pestañas se activan con el teclado: son <button> nativos, así que Enter y Espacio ya funcionan", async () => {
+    renderTabbed();
+    const population = screen.getByRole("tab", { name: "Población" });
+    population.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(population).toHaveAttribute("aria-selected", "true");
+
+    const chart = screen.getByRole("tab", { name: "Gráfica" });
+    chart.focus();
+    await userEvent.keyboard(" ");
+    expect(chart).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("el panel inactivo sigue MONTADO (no desmontado) y marcado como inert", async () => {
+    // Es la condición de la sincronización: si se desmontara, PopulationGrid
+    // perdería su estado y habría que volver a pasar el mouse por el gráfico.
+    const { container } = renderTabbed();
+    expect(container.querySelector(".population-grid")).not.toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Población" }));
+    // Ahora el inactivo es el del gráfico, y sigue en el DOM.
+    expect(container.querySelector(".chart-container")).not.toBeNull();
+
+    const inactive = container.querySelector(".run-tabpanel-inactive");
+    expect(inactive).not.toBeNull();
+    expect(inactive).toHaveAttribute("inert");
+  });
+
+  it("role y cableado ARIA: tablist, tabpanel y aria-controls/aria-labelledby apareados", async () => {
+    const { container } = renderTabbed();
+    expect(screen.getByRole("tablist")).toBeInTheDocument();
+    expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(2);
+
+    for (const name of ["Gráfica", "Población"]) {
+      const tab = screen.getByRole("tab", { name });
+      const panelId = tab.getAttribute("aria-controls")!;
+      const panel = container.querySelector(`#${panelId}`)!;
+      expect(panel.getAttribute("aria-labelledby")).toBe(tab.id);
+    }
+  });
+
+  it("el estado de la corrida queda FUERA de las pestañas, visible con cualquiera activa", async () => {
+    const { container } = renderTabbed();
+    const statusOutside = () => {
+      const status = container.querySelector(".status-line");
+      return status !== null && status.closest(".run-tabpanel") === null;
+    };
+    expect(statusOutside()).toBe(true);
+    await userEvent.click(screen.getByRole("tab", { name: "Población" }));
+    expect(statusOutside()).toBe(true);
+  });
+
+  it("el mensaje de error tampoco va en una pestaña — es por donde sale 'Conexión perdida'", () => {
+    const { container } = renderTabbed({
+      run: {
+        ...historicalRunHandle([snapshot({ generation: 0 })]),
+        status: "error",
+        errorMessage: "Conexión perdida — la corrida puede haber terminado en el servidor.",
+      },
+    });
+    const error = container.querySelector(".error")!;
+    expect(error).toHaveTextContent(/Conexión perdida/);
+    expect(error.closest(".run-tabpanel")).toBeNull();
+  });
+
+  it("sin la prop `tabbed` no hay pestañas: los modos de comparación quedan como estaban", () => {
+    const { container } = renderTabbed({ tabbed: false });
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    // Y el contenido sigue ahí, en una sola columna.
+    expect(container.querySelector(".chart-container")).not.toBeNull();
+    expect(container.querySelector(".population-grid")).not.toBeNull();
+  });
+
+  it("sin snapshots no hay pestañas, aunque `tabbed` esté puesto: 'Población' no tendría nada", () => {
+    const { container } = renderTabbed({ run: historicalRunHandle([]) });
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    // El gráfico vacío se muestra suelto, como siempre.
+    expect(container.querySelector(".chart-container")).not.toBeNull();
+    expect(container.querySelector(".population-grid")).toBeNull();
+  });
+
+  it("'Guardar esta corrida' vive en la pestaña Gráfica, donde cierra la narrativa", () => {
+    const { container } = render(
+      <RunPanel
+        title="Corrida"
+        climateEnabled
+        climateChangeSpeed="moderate"
+        run={historicalRunHandle([snapshot({ generation: 0 })])}
+        gridWidth={5}
+        gridHeight={5}
+        numAncestors={1}
+        tabbed
+        onSave={() => {}}
+        saveStatus="unsaved"
+        saveError={null}
+      />,
+    );
+    const save = container.querySelector(".save-run")!;
+    expect(save).not.toBeNull();
+    expect(save.closest("[role='tabpanel']")?.id).toBe("run-panel-chart");
   });
 });

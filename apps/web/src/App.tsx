@@ -681,6 +681,7 @@ export default function App() {
                 onSave={runSingle.save}
                 saveStatus={runSingle.saveStatus}
                 saveError={runSingle.saveError}
+                tabbed
               />
             )}
           </div>
