@@ -6,6 +6,76 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.28.0] — Compresión gzip habilitada en nginx
+
+**Documentos afectados:** `03-arquitectura.md` (v1.8 → v1.9 — fila nueva en §5: compresión gzip en
+nivel 1, global al host).
+
+**Alcance: cambio de infraestructura.** Ningún archivo del repositorio cambió de comportamiento —
+esta entrada y la fila de arquitectura son el único rastro, porque la decisión vive en
+`/etc/nginx/nginx.conf` del VPS y no se puede reconstruir leyendo el código. Respaldos previos a
+cada edición en `/root/nginx.conf.bak-20261009-194830` y `…-20261009-195312`.
+
+### Changed
+- Habilitada la compresión gzip para JSON y assets estáticos en el bloque `http {}` **global** de
+  `/etc/nginx/nginx.conf`: `gzip_types` ahora incluye `application/json`, `text/css`,
+  `application/javascript` y tipos relacionados; `gzip_proxied any`; y `gzip_vary on`, agregado en
+  una segunda ronda. `gzip on` ya estaba desde antes y no se tocó.
+- `gzip_comp_level` queda **sin modificar**, o sea en 1, el default de nginx. Ver la fila de
+  arquitectura para el razonamiento.
+- `gzip_vary on` hace que las respuestas lleven `Vary: Accept-Encoding`. Hoy no cambia nada (no hay
+  CDN ni caché compartido delante), pero sin eso un caché futuro podría entregar un cuerpo
+  comprimido a un cliente que no lo pidió.
+
+### Por qué nada se comprimía
+`gzip on` estaba activo, pero `gzip_types` y `gzip_proxied` estaban **comentados**, así que valían
+los defaults: `text/html` como único tipo, y `off` para respuestas que vienen de un upstream. En
+este host **todo** es proxy (`location /runs` → el contenedor del API, `location /` → el contenedor
+web), así que no se comprimía nada excepto el HTML. Verificado antes del cambio: ni la respuesta
+JSON del API ni el bundle de 601 KB traían `content-encoding`.
+
+### Mediciones
+| Qué | Valor medido |
+| --- | --- |
+| Bundle JS real | 601.805 → **209.493 bytes** (2,87×) |
+| Respuesta de `GET /runs/:id`, 1500 generaciones a 20×20 | 25.302.380 → **4.851.902 bytes** (5,21×) |
+| Lo mismo en nivel 6, no aplicado | 2.497.576 bytes (10,13×) |
+| Transferencia en el enlace medido (5,5–7,4 Mbps) | **26–35 s → 5,0–6,7 s** |
+| CPU de compresión del payload de 24,13 MB | nivel 1: 112 ms · nivel 6: 382 ms |
+
+El factor del bundle (2,87×) y el del JSON (5,21×) son distintos a propósito: el bundle ya está
+minificado, el JSON de una corrida es altamente repetitivo. El número que importa para la carga de
+corridas guardadas es el del JSON.
+
+El nivel efectivo de nginx se determinó **empíricamente**, no leyendo la documentación: su salida
+para el bundle (209.493 bytes) coincide con `gzip -1` local (209.508) con 15 bytes de diferencia —
+solo metadata del header—, y queda lejos de `gzip -6` (177.715).
+
+### Verificación
+- `nginx -t` limpio en las dos rondas (el único warning, sobre `[::]:443` en otro sitio del host,
+  es preexistente y ajeno a este cambio). Recargado con `nginx -s reload`, sin downtime, y sin
+  ninguna entrada nueva en `error.log`.
+- `content-encoding: gzip` presente en `/runs?limit=1` (JSON del API) y en el bundle; tras la
+  segunda ronda, `Vary: Accept-Encoding` también.
+- El cambio es global al host, así que afecta a sus **8 sitios**. Los demás verificados
+  respondiendo tras cada recarga.
+
+### Premisa corregida por la medición
+- La ruta del API es `/runs`, no `/api/runs`: medido antes del cambio, `/api/runs` devuelve
+  `content-type: text/html` —es el fallback del SPA— y **ya venía comprimido**, porque `text/html`
+  era el único tipo que el default alcanzaba. Verificar la compresión del API contra esa ruta habría
+  dado "gzip" sin importar el cambio.
+
+### Limitación conocida registrada
+- El factor de 5,21× sobre el payload de 24,13 MB se midió con `gzip -1` sobre la respuesta real
+  —bytes idénticos a los de producción: mismo código, misma forma de datos— y no a través de nginx
+  en producción, porque **no hay ninguna corrida guardada ahí** a la que se pueda acceder: la
+  identidad es por navegador (Grupo 1) y crear una dejaría ~24 MB permanentes, sin endpoint que los
+  borre. Lo que sí se midió a través de nginx en producción es el nivel de compresión efectivo, con
+  el bundle.
+
+---
+
 ## [v0.27.0] — Slider de generaciones en pestaña Población + centrado de grilla
 
 **Documentos afectados:** `03-arquitectura.md` (v1.7 → v1.8 — fila nueva en §5: fuente de verdad
