@@ -6,6 +6,114 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.29.0] — Backpressure en el WebSocket de corridas en vivo
+
+**Documentos afectados:** ninguno. La decisión queda registrada acá; `03-arquitectura.md` §5 ya
+tiene la fila del heartbeat de aplicación (v0.24.0), y esto es la contracara de esa misma decisión.
+
+### Fixed
+- Las corridas con grilla grande (≥40×40) mostraban **"Conexión perdida"** en enlaces lentos
+  aunque el servidor seguía transmitiendo sin problemas.
+
+### Causa raíz
+El servidor enviaba snapshots a ritmo fijo (80 ms por defecto) **sin consultar nunca**
+`socket.bufferedAmount`. Medido: un snapshot de 40×40 pesa **66,1 KB**, así que a ese ritmo el
+servidor ofrece **826 KB/s = 6,8 Mbps**. En un enlace que entrega menos, el buffer de salida crece
+sin cota — y como el `ping` del heartbeat viaja por el **mismo stream TCP ordenado** que los
+snapshots, queda bloqueado detrás del atraso. El watchdog de 60 s del cliente (v0.24.0) entonces
+declara muerta una conexión perfectamente viva.
+
+Reproducido contra producción con el WebSocket instrumentado, grilla 40×40 y enlace de 2 Mbps:
+llegaron **428 de 1500 snapshots**, de los 5 pings enviados llegó **uno solo**, y la pantalla
+mostró el mensaje exacto del reporte. El servidor **nunca cerró** el socket y **nunca** registró un
+error: `docker logs camevo-api` quedó vacío, `RestartCount=0`, `OOMKilled=false`. Los ~1070
+snapshots pendientes eran **~71 MB** encolados; a 166 KB/s efectivos, drenarlos toma unos 7
+minutos.
+
+En la misma corrida sobre un enlace sin limitar (5,12 Mbps logrados) la corrida **completó**, con
+los gaps entre pings en 29,6 / 30,0 / 30,0 / **32,7 s** — el mecanismo ya estaba ahí, con 2,7 s de
+deriva acumulada. A 20×20 el snapshot son 16,9 KB (1,7 Mbps), que es por qué el bug solo aparecía
+con grillas grandes.
+
+### Changed
+- Antes de cada envío de snapshot se lee `socket.bufferedAmount`. Si supera
+  `BACKPRESSURE_HIGH_WATER_MARK` (**256 KB**, ~4 snapshots de 40×40), **se omite el envío**: la
+  simulación sigue a su ritmo y `registry.appendSnapshot` ya guardó ese snapshot, así que "Guardar
+  esta corrida" persiste las generaciones **completas**. Lo que submuestrea es la vista en vivo, y
+  solo mientras el enlace no da. 256 KB acota el atraso a ~1,5 s de drenaje a 166 KB/s, muy por
+  debajo del timeout de 60 s.
+- Se envían **siempre**, sin importar el buffer: las generaciones con `catastropheOccurred` (el
+  marcador de la gráfica y el destello de la grilla dependen de que ese snapshot llegue), con
+  `extinct` (es el último de la corrida y lleva la razón del corte), y la **última generación
+  pedida**. El mensaje `done` nunca pasó por el chequeo de buffer.
+- El heartbeat no cambia: sigue en 30 s. Con el buffer acotado el ping llega a tiempo.
+- Log en las **transiciones** de congestión (entrada y salida, con el valor del buffer y cuántos
+  envíos se saltearon) más un resumen al terminar, en vez de una línea por snapshot salteado: en un
+  enlace lento eso último son miles de líneas por corrida, en un VPS de 2 vCPU donde el I/O de log
+  compite con el motor.
+
+### Alternativas descartadas
+- **Subir el timeout del cliente a 120 s, o hacerlo proporcional al tamaño de grilla.** El atraso
+  **no está acotado**: crece mientras el servidor produzca más rápido de lo que el enlace entrega.
+  Medido, drenar el backlog acumulado a 2 Mbps toma ~7 minutos, así que cualquier timeout finito
+  solo mueve el punto donde falla. Y la variable que decide no es la grilla sino el ancho de banda
+  del cliente, que el servidor no conoce.
+- **Frenar la simulación al ritmo del socket.** Nada se saltearía, pero una corrida de 1500
+  generaciones podría tardar 10× más en un enlace lento, sin que el usuario entienda por qué el
+  ritmo que eligió no se respeta.
+- **`nearExtinct` como generación crítica.** Su contrato (`shared-types`) dice que **no es
+  absorbente**: se mantiene mientras la población siga bajo el umbral, o sea potencialmente
+  cientos de generaciones seguidas. Marcarlo crítico desactivaría el backpressure entero justo en
+  la fase de población baja.
+
+### Tests añadidos (+7)
+- **5 unitarios** en `live-run.test.ts`: salteo bajo congestión con el registro conservando todas
+  las generaciones; la generación con catástrofe se envía dentro de la ventana congestionada y sus
+  vecinas no; la última generación se envía igual y `done` llega; con buffer holgado no saltea
+  nada; y un socket **sin** `bufferedAmount` envía todo en vez de saltear todo.
+- **1 de integración** (`ws-backpressure.spec.ts`), enlace real limitado a 2 Mbps vía CDP: 40×40 ×
+  1500 llega a "finalizada", cero errores en pantalla, **≥2 pings** recibidos y la última
+  generación es la 1499. El log del servidor muestra el ciclo funcionando: entra en congestión a
+  ~282 KB, saltea ~47 envíos, drena, retoma — **1100 de 1500 envíos salteados** y la corrida
+  completa igual.
+- **1 de regresión**, enlace rápido: 20×20 × 300 → **300 de 300** snapshots, sin huecos.
+- **Discriminación verificada**: con `BACKPRESSURE_HIGH_WATER_MARK = Infinity` el test de 2 Mbps
+  falla.
+
+### Premisas corregidas por la medición
+- **El motor no es el problema.** Una generación de 40×40 tarda **8,18 ms** de mediana y 15,46 ms
+  en el peor caso — tres órdenes de magnitud por debajo de la hipótesis de "la generación tarda más
+  que el heartbeat".
+- **El servidor no espera ningún pong.** No hay timeout de pong del lado del servidor: solo envía
+  pings. El único que corta es el cliente, y lo que llega tarde es el **ping**, no el pong.
+- **No es OOM ni reinicio.** Cero OOM kills, `RestartCount=0`, logs vacíos, contenedor en 473 MiB
+  de 1,875 GiB. El host sí está apretado (1456 MB de swap en uso), pero el API no fue matado.
+
+### Hallazgos colaterales
+- El `FakeSocket` de los tests **no tenía `bufferedAmount`**, y eso rompió 4 tests existentes al
+  implementar el fix: `undefined <= 262144` es `false`, así que se salteaba *todo*. Se agregó la
+  propiedad al doble **y** un guardia de tipo en el servidor, porque un socket que no la exponga
+  debe degradar al comportamiento de siempre (enviar), no al degradado. Hay un test que fija eso.
+- El test unitario destapó un defecto en el propio fix: leía `socket.bufferedAmount` **dos veces**
+  por iteración (una para el `typeof`, otra para el valor). En `ws` esa propiedad es un getter que
+  recorre la cola de envío, así que costaba el doble y las dos lecturas podían discrepar.
+
+### Limitación conocida registrada
+- La vista en vivo y la corrida guardada **pueden diferir** en un enlace congestionado: la guardada
+  tiene todas las generaciones, la vista en vivo las que alcanzaron a llegar. Es el comportamiento
+  buscado —una vista en tiempo real que saltea antes que atrasarse— y no afecta a `POST
+  /runs/:id/save`, que lee del registro.
+- El test de integración tarda **3,3 minutos** (6,6 cuando falla, porque espera el timeout), y
+  lleva la suite e2e de ~5,2 a ~7,7 minutos. Se deja en la suite por defecto porque cubre un
+  incidente real de producción.
+
+### Conteos
+API **223 pasan, 5 omitidos** (eran 218/5). Web unitarios **186**, sin cambio. E2E **72 / 72 / 72**
+en tres corridas completas consecutivas (eran 70). `npm run build`, `tsc --noEmit` del API y
+`oxlint` (7 warnings preexistentes) limpios.
+
+---
+
 ## [v0.28.1] — Layout en dos columnas para controles de comparación en vivo
 
 **Documentos afectados:** ninguno. No hay fila nueva en `03-arquitectura.md`: es CSS puro y el patrón
