@@ -617,3 +617,149 @@ describe("<PopulationGrid /> — la grilla habla de éxito reproductivo, no de '
     expect(screen.queryByText(/^Produjo \d+ crías\.$/)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Slider de navegación por generaciones. Lo que se puede verificar en jsdom
+ * es el contrato de control: la posición que toma el slider, qué valor
+ * reporta hacia arriba y cuándo aparece el botón de volver al último. El
+ * efecto visible (la grilla dibujando esa generación) ya está cubierto por
+ * los tests de `hoveredGeneration` de más arriba, que es el mismo camino —
+ * el slider no tiene un estado propio que pueda divergir.
+ */
+describe("slider de generaciones", () => {
+  function run(): GenerationSnapshot[] {
+    return [
+      snapshot({ generation: 0, organisms: [{ id: "a", x: 0, y: 0, fitness: 1 }] }),
+      snapshot({ generation: 1, organisms: [{ id: "b", x: 0, y: 0, fitness: 5 }] }),
+      snapshot({ generation: 2, organisms: [{ id: "c", x: 0, y: 0, fitness: 10 }] }),
+    ];
+  }
+
+  function renderNav(props: Partial<React.ComponentProps<typeof PopulationGrid>> = {}) {
+    mockCanvasContext();
+    mockCanvasRect();
+    const onViewGeneration = vi.fn();
+    const onViewLatest = vi.fn();
+    const result = render(
+      <PopulationGrid
+        snapshots={run()}
+        gridWidth={1}
+        gridHeight={1}
+        runId="r"
+        inspectable
+        onViewGeneration={onViewGeneration}
+        onViewLatest={onViewLatest}
+        {...props}
+      />,
+    );
+    const slider = result.container.querySelector(".population-grid-nav input") as HTMLInputElement;
+    return { ...result, slider, onViewGeneration, onViewLatest };
+  }
+
+  it("arranca en la última posición y su rango cubre todos los snapshots", () => {
+    const { slider, container } = renderNav();
+    // El valor es el ÍNDICE del snapshot, no la generación: así las flechas
+    // ←→ del input nativo saltan de un snapshot real al siguiente.
+    expect(slider.min).toBe("0");
+    expect(slider.max).toBe("2");
+    expect(slider.step).toBe("1");
+    expect(slider.value).toBe("2");
+    expect(container.querySelector(".population-grid-nav label")).toHaveTextContent("Generación 2 / 2");
+  });
+
+  it("sin que el usuario lo toque, avanza solo con cada snapshot nuevo", () => {
+    const { slider, rerender, container } = renderNav();
+    expect(slider.value).toBe("2");
+
+    const grown = [...run(), snapshot({ generation: 3, organisms: [{ id: "d", x: 0, y: 0, fitness: 12 }] })];
+    rerender(
+      <PopulationGrid
+        snapshots={grown}
+        gridWidth={1}
+        gridHeight={1}
+        runId="r"
+        inspectable
+        onViewGeneration={vi.fn()}
+        onViewLatest={vi.fn()}
+      />,
+    );
+
+    const after = container.querySelector(".population-grid-nav input") as HTMLInputElement;
+    expect(after.max).toBe("3");
+    expect(after.value).toBe("3");
+    expect(container.querySelector(".population-grid-nav label")).toHaveTextContent("Generación 3 / 3");
+    // Siguiendo al último, no hay nada que aclarar ni a dónde volver.
+    expect(container.querySelector(".population-grid-generation")).toBeNull();
+  });
+
+  it("moverlo reporta la GENERACIÓN del snapshot de esa posición, no el índice", () => {
+    const { slider, onViewGeneration } = renderNav();
+    fireEvent.change(slider, { target: { value: "1" } });
+    expect(onViewGeneration).toHaveBeenCalledWith(1);
+  });
+
+  it("una vez movido, deja de seguir al último aunque lleguen snapshots nuevos", () => {
+    // `hoveredGeneration` con valor es exactamente el estado en el que queda
+    // RunPanel después de que el usuario mueve el slider.
+    const { container, rerender } = renderNav({ hoveredGeneration: 0 });
+    expect((container.querySelector(".population-grid-nav input") as HTMLInputElement).value).toBe("0");
+
+    const grown = [...run(), snapshot({ generation: 3, organisms: [{ id: "d", x: 0, y: 0, fitness: 12 }] })];
+    rerender(
+      <PopulationGrid
+        snapshots={grown}
+        gridWidth={1}
+        gridHeight={1}
+        runId="r"
+        inspectable
+        hoveredGeneration={0}
+        onViewGeneration={vi.fn()}
+        onViewLatest={vi.fn()}
+      />,
+    );
+
+    const after = container.querySelector(".population-grid-nav input") as HTMLInputElement;
+    expect(after.max).toBe("3");
+    expect(after.value).toBe("0"); // se queda donde lo dejó el usuario
+    expect(container.querySelector(".population-grid-nav label")).toHaveTextContent("Generación 0 / 3");
+    expect(container.querySelector(".population-grid-generation")).toHaveTextContent("Estás viendo la generación 0");
+  });
+
+  it("una generación sin snapshot exacto cae en la posición más cercana", () => {
+    const { container } = renderNav({ hoveredGeneration: 7 });
+    const slider = container.querySelector(".population-grid-nav input") as HTMLInputElement;
+    expect(slider.value).toBe("2");
+  });
+
+  describe("botón '↓ Último'", () => {
+    it("aparece solo si el usuario se movió del último snapshot, y vuelve al modo automático", () => {
+      const { container, onViewLatest } = renderNav({ hoveredGeneration: 0 });
+      const button = screen.getByRole("button", { name: /Último/ });
+      fireEvent.click(button);
+      // Pone el estado en null, que es lo que significa "seguir al último" —
+      // no la última generación como número, que volvería a congelarse en
+      // cuanto llegue el próximo snapshot.
+      expect(onViewLatest).toHaveBeenCalledTimes(1);
+      expect(container.querySelector(".population-grid-nav")).toBeTruthy();
+    });
+
+    it("no aparece en modo automático: no tendría ningún efecto", () => {
+      renderNav({ hoveredGeneration: null });
+      expect(screen.queryByRole("button", { name: /Último/ })).not.toBeInTheDocument();
+    });
+
+    it("no aparece en una corrida terminada: el extremo derecho del slider ya no se mueve", () => {
+      // RunPanel no pasa `onViewLatest` cuando la corrida no está en vivo.
+      renderNav({ hoveredGeneration: 0, onViewLatest: undefined });
+      expect(screen.queryByRole("button", { name: /Último/ })).not.toBeInTheDocument();
+      // El slider sigue estando: navegar el pasado es justo lo que más
+      // importa en una corrida guardada.
+      expect(screen.getByText(/Generación 0 \/ 2/)).toBeInTheDocument();
+    });
+  });
+
+  it("sin `onViewGeneration` no hay slider — un call-site puede no querer navegación", () => {
+    const { container } = renderNav({ onViewGeneration: undefined });
+    expect(container.querySelector(".population-grid-nav")).toBeNull();
+  });
+});

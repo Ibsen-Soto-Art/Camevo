@@ -185,6 +185,7 @@
 /* Botones primarios (acento teal), acento secundario violeta en hover — ver justificación de paleta: "acento secundario: highlights, hover states". */
 .run-form button,
 .playback-controls button,
+.population-grid-nav button,
 .save-run button {
   padding: 0.6rem 1rem;
   font-size: 0.875rem;
@@ -200,6 +201,7 @@
 
 .run-form button:hover:not(:disabled),
 .playback-controls button:hover:not(:disabled),
+.population-grid-nav button:hover:not(:disabled),
 .save-run button:hover:not(:disabled) {
   background: var(--color-accent-secondary);
 }
@@ -254,7 +256,8 @@
   margin-top: 1.5rem;
 }
 
-.playback-controls {
+.playback-controls,
+.population-grid-nav {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -274,12 +277,14 @@
   color: var(--color-text-secondary);
 }
 
-.playback-controls button {
+.playback-controls button,
+.population-grid-nav button {
   padding: 0.5rem 1rem;
   font-size: 0.95rem;
 }
 
-.playback-controls label {
+.playback-controls label,
+.population-grid-nav label {
   display: flex;
   flex-direction: column;
   font-size: 0.8rem;
@@ -642,10 +647,40 @@
   pointer-events: none;
 }
 
+/* El slider ocupa el ancho sobrante de la fila. Medido en la pestaña a
+   1280px: el input por defecto mide 129px y con `flex: 1` pasa a 1128px —
+   sobre una corrida de 1500 generaciones eso es la diferencia entre ~11,6
+   generaciones por pixel y ~1,3. `min-width: 0` evita que el texto de la
+   etiqueta ("Generación 1499 / 1499") desborde la fila. */
+.population-grid-nav {
+  margin-bottom: 1rem;
+}
+
+.population-grid-nav label {
+  flex: 1;
+  min-width: 0;
+}
+
+/* El canvas tiene un ancho FIJO en px (PopulationGrid.tsx lo calcula del
+   contenedor y lo topea en 700), así que en la pestaña Población a ancho
+   completo quedaban ~466px de vacío a la derecha (medido).
+
+   `margin-inline: auto` y no `display: flex` en el contenedor: el flex
+   habría que ponerlo en `.population-grid`, que envuelve TAMBIÉN el
+   indicador de generación, el hint, el panel de inspección, la leyenda y el
+   caption — convertirlo en flex column cambia el dimensionado de los cinco y
+   corta el colapso de márgenes entre ellos. Ponerlo en este wrapper no
+   serviría: el wrapper ya se ajusta al canvas, así que centrar su contenido
+   no mueve nada. `margin: auto` necesita `display: block` (sobre un
+   inline-block no hace nada) y entonces `width: fit-content` para no
+   estirarse. `position: relative` se conserva: el banner de catástrofe se
+   posiciona contra este elemento. */
 .population-grid-canvas-wrap {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: fit-content;
   max-width: 100%;
+  margin-inline: auto;
 }
 
 .population-grid canvas {

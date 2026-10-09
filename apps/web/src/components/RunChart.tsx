@@ -174,6 +174,15 @@ export interface RunChartProps {
    * última conocida.
    */
   readonly onHoverGeneration?: (generation: number) => void;
+  /**
+   * Generación que el panel de valores debe mostrar, manejada desde
+   * afuera. Con esta prop presente el gráfico queda CONTROLADO: deja de
+   * usar su estado interno y solo avisa hacia arriba, así que el slider de
+   * generaciones de la grilla (y el hover de la propia gráfica) escriben en
+   * un único lugar. `undefined` — no `null` — mantiene el modo no
+   * controlado, que es el que usan los tests que montan el gráfico solo.
+   */
+  readonly hoveredGeneration?: number | null;
 }
 
 /**
@@ -188,7 +197,7 @@ export interface RunChartProps {
  * con dejarlo documentado solo en comentarios de código/tests que el
  * usuario nunca ve.
  */
-export default function RunChart({ snapshots, height = 380, onHoverGeneration }: RunChartProps) {
+export default function RunChart({ snapshots, height = 380, onHoverGeneration, hoveredGeneration }: RunChartProps) {
   const climateTaskIds = useMemo(() => {
     const ids = new Set<string>();
     for (const snapshot of snapshots) {
@@ -232,14 +241,38 @@ export default function RunChart({ snapshots, height = 380, onHoverGeneration }:
   // que limpie `hoveredGeneration` — el panel se queda mostrando los
   // últimos valores vistos hasta que el mouse (o el dedo, en mobile)
   // entra a una generación distinta.
-  const [hoveredGeneration, setHoveredGeneration] = useState<number | null>(null);
+  const [uncontrolledHover, setUncontrolledHover] = useState<number | null>(null);
+  const isControlled = hoveredGeneration !== undefined;
+  const activeGeneration = isControlled ? hoveredGeneration : uncontrolledHover;
 
   /** Único punto que mueve el hover: mantiene el estado local y el aviso hacia afuera siempre en el mismo valor. */
   function updateHoveredGeneration(generation: number) {
-    setHoveredGeneration(generation);
+    if (!isControlled) setUncontrolledHover(generation);
     onHoverGeneration?.(generation);
   }
-  const hoveredRow = hoveredGeneration === null ? null : chartRows.find((row) => row.generation === hoveredGeneration);
+
+  /*
+   * La fila MÁS CERCANA, no la exacta. Con el hover del mouse da lo mismo
+   * (la generación sale de `chartRows`, así que la coincidencia exacta
+   * existe siempre), pero el slider de la grilla recorre los snapshots
+   * COMPLETOS: en una corrida de 1500 generaciones `chartRows` tiene 300
+   * puntos, así que una búsqueda exacta no encontraría nada en ~4 de cada 5
+   * posiciones del slider y el panel se vaciaría al cambiar de pestaña.
+   */
+  const hoveredRow = useMemo(() => {
+    if (activeGeneration === null || chartRows.length === 0) return null;
+    let nearest = chartRows[0]!;
+    let nearestDistance = Math.abs(nearest.generation - activeGeneration);
+    for (const row of chartRows) {
+      if (row.generation === activeGeneration) return row;
+      const distance = Math.abs(row.generation - activeGeneration);
+      if (distance < nearestDistance) {
+        nearest = row;
+        nearestDistance = distance;
+      }
+    }
+    return nearest;
+  }, [chartRows, activeGeneration]);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   /*
    * Tras un `touchend`, el navegador emite eventos de mouse SINTÉTICOS

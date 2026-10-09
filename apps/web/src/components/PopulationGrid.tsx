@@ -77,6 +77,24 @@ export interface PopulationGridProps {
    * mouse por el extremo derecho del gráfico.
    */
   readonly hoveredGeneration?: number | null;
+  /**
+   * Mueve la generación que se está mirando. Es el MISMO estado que escribe
+   * el hover del gráfico (vive en RunPanel), así que el slider y el hover no
+   * pueden contradecirse: no hay estado propio acá que mantener en sincronía.
+   *
+   * Su presencia es lo que habilita el slider — mismo idioma que `onSave` en
+   * RunPanel: un call-site que no quiera navegación simplemente no la pasa.
+   */
+  readonly onViewGeneration?: (generation: number | null) => void;
+  /**
+   * Vuelve al modo automático (seguir al snapshot más reciente). RunPanel la
+   * pasa SOLO mientras la corrida sigue en vivo, que es el único caso donde
+   * hace falta: ahí el extremo derecho del slider se mueve solo y quedarse
+   * parado en una generación pasada es una decisión que hay que poder
+   * deshacer. En una corrida terminada el extremo derecho no se mueve más,
+   * así que arrastrar hasta el final ya es "ir al último".
+   */
+  readonly onViewLatest?: () => void;
 }
 
 /**
@@ -148,6 +166,8 @@ export default function PopulationGrid({
   runId,
   inspectable,
   hoveredGeneration = null,
+  onViewGeneration,
+  onViewLatest,
 }: PopulationGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -173,26 +193,27 @@ export default function PopulationGrid({
    * existe. Protege de que un call-site futuro pase arrays distintos a los
    * dos hijos.
    */
-  const displayed = useMemo(() => {
-    if (snapshots.length === 0) return undefined;
-    if (hoveredGeneration === null) return snapshots.at(-1);
+  const displayedIndex = useMemo(() => {
+    if (snapshots.length === 0) return -1;
+    if (hoveredGeneration === null) return snapshots.length - 1;
 
-    let nearest = snapshots[0]!;
-    let nearestDistance = Math.abs(nearest.generation - hoveredGeneration);
-    for (const snapshot of snapshots) {
-      if (snapshot.generation === hoveredGeneration) return snapshot;
-      const distance = Math.abs(snapshot.generation - hoveredGeneration);
+    let nearest = 0;
+    let nearestDistance = Math.abs(snapshots[0]!.generation - hoveredGeneration);
+    for (let i = 0; i < snapshots.length; i++) {
+      const distance = Math.abs(snapshots[i]!.generation - hoveredGeneration);
+      if (distance === 0) return i;
       if (distance < nearestDistance) {
-        nearest = snapshot;
+        nearest = i;
         nearestDistance = distance;
       }
     }
     return nearest;
   }, [snapshots, hoveredGeneration]);
 
+  const displayed = displayedIndex === -1 ? undefined : snapshots[displayedIndex];
   const latest = displayed;
   /** RF-027: el endpoint solo sirve la generación ACTUAL del servidor, así que inspeccionar una pasada daría datos de otra. */
-  const showingLatestSnapshot = displayed !== undefined && displayed === snapshots.at(-1);
+  const showingLatestSnapshot = displayed !== undefined && displayedIndex === snapshots.length - 1;
   const canInspect = inspectable && showingLatestSnapshot;
   /*
    * Dos motivos distintos para no poder inspeccionar, con mensajes
@@ -366,8 +387,47 @@ export default function PopulationGrid({
     return null;
   }
 
+  const lastGeneration = snapshots.at(-1)!.generation;
+
   return (
     <div className="population-grid" ref={containerRef}>
+      {/*
+        Navegación por generaciones SIN salir de la pestaña: desde v0.26.0 la
+        grilla y el gráfico viven en pestañas separadas, así que el hover
+        —que sigue funcionando y escribe el mismo estado— dejó de estar al
+        alcance de quien mira la grilla.
+
+        El valor del slider es el ÍNDICE del snapshot, no el número de
+        generación: así las flechas ←→ del input nativo saltan de un snapshot
+        real al siguiente, sin posiciones intermedias que no existan. Hoy los
+        dos coinciden (las generaciones son contiguas desde 0), pero el índice
+        es lo correcto por construcción.
+      */}
+      {onViewGeneration && (
+        <div className="population-grid-nav">
+          <label>
+            Generación {latest.generation} / {lastGeneration}
+            <input
+              type="range"
+              min={0}
+              max={snapshots.length - 1}
+              step={1}
+              value={displayedIndex}
+              onChange={(e) => onViewGeneration(snapshots[Number(e.target.value)]!.generation)}
+            />
+          </label>
+          {/*
+            Solo aparece si hay a dónde volver: con `hoveredGeneration` en
+            null la grilla YA sigue al último snapshot, así que el botón no
+            tendría ningún efecto.
+          */}
+          {onViewLatest && hoveredGeneration !== null && (
+            <button type="button" onClick={onViewLatest}>
+              ↓ Último
+            </button>
+          )}
+        </div>
+      )}
       <div className="population-grid-canvas-wrap">
         {/*
           Cuando la corrida ya no está activa (guardada, o simplemente

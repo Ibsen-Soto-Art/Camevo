@@ -180,7 +180,12 @@ export default function RunPanel({
       <div className={showTabs ? "run-tabpanels" : undefined}>
         <div {...panelProps("chart")}>
           <div className="chart-container">
-            <RunChart snapshots={run.snapshots} height={chartHeight} onHoverGeneration={setHoveredGeneration} />
+            <RunChart
+              snapshots={run.snapshots}
+              height={chartHeight}
+              onHoverGeneration={setHoveredGeneration}
+              hoveredGeneration={hoveredGeneration}
+            />
           </div>
           {hasSnapshots && (
             <ExplanatoryPanel
@@ -197,6 +202,12 @@ export default function RunPanel({
         {hasSnapshots && (
           <div {...panelProps("population")}>
             {/*
+              `onViewLatest` repite la condición de `inspectable` por
+              casualidad, no por la misma razón: una mide si el servidor puede
+              responder por los organismos, la otra si el extremo derecho del
+              slider todavía se mueve. Se escriben por separado a propósito —
+              si mañana una cambia, la otra no tiene por qué seguirla.
+
               "running" y "paused" son los dos estados en los que la corrida
               sigue abierta en el LiveRunRegistry del servidor. "done" cubre
               tanto una corrida recién terminada como una guardada que se
@@ -210,6 +221,10 @@ export default function RunPanel({
               runId={run.runId}
               inspectable={run.status === "running" || run.status === "paused"}
               hoveredGeneration={hoveredGeneration}
+              onViewGeneration={setHoveredGeneration}
+              onViewLatest={
+                run.status === "running" || run.status === "paused" ? () => setHoveredGeneration(null) : undefined
+              }
             />
           </div>
         )}
