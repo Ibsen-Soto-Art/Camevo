@@ -6,6 +6,62 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.28.1] — Layout en dos columnas para controles de comparación en vivo
+
+**Documentos afectados:** ninguno. No hay fila nueva en `03-arquitectura.md`: es CSS puro y el patrón
+`auto-fit` + `minmax` ya estaba en el proyecto (`.run-form`, `App.css`), así que no hay decisión
+de diseño nueva que registrar.
+
+### Changed
+- En el modo "Comparar dos corridas nuevas (en vivo)", las tarjetas de ritmo de Corrida A y Corrida
+  B pasan de apiladas verticalmente a lado a lado. Medido a 1280px con el formulario colapsado —el
+  estado en el que se mira una corrida— el alto combinado baja de **240px a 112px (−53%)**, el ancho
+  de cada tarjeta pasa de **1200px a 592px**, y el botón "Pausar" (83px) y el slider de ritmo (133px)
+  **no cambian de tamaño**.
+- Las dos tarjetas necesitaron un contenedor propio (`.live-compare-controls`): antes eran hermanas
+  del `<details>` del formulario dentro de `.controls-column`, que es una columna flex, así que no
+  había forma de maquetarlas entre ellas sin afectar también al formulario. La estructura interna de
+  cada tarjeta no cambió.
+
+### Por qué `auto-fit` y no un breakpoint de viewport
+El ancho de `.controls-column` **no se deduce del viewport**: cambia con la regla `:has()` de
+v0.25.1. Medido a 1280px, mide 1200px con el formulario colapsado (layout de una columna) y 360px
+con el formulario abierto.
+
+Con `@media (min-width: 900px)` las dos columnas se aplicarían también en el estado de 360px.
+Medido en esa variante: cada tarjeta queda en **172px de ancho y 164px de alto** —el slider, que
+mide 129px, se va a una fila propia debajo del botón— contra los 112px de alto que tiene apilada.
+El alto COMBINADO igual baja (164px contra 240px), así que el problema no es el espacio vertical
+sino el ancho: 172px para un slider de 129px deja 43px de holgura.
+
+`grid-template-columns: repeat(auto-fit, minmax(250px, 1fr))` resuelve contra el ancho REAL
+disponible, sin breakpoint y sin consulta de contenedor: dos pistas de 250px entran recién a partir
+de ~516px, y las pistas vacías se colapsan, así que las dos que quedan se reparten todo el ancho.
+Medido: 592px cada una con el formulario colapsado, y una sola columna de 360px con el formulario
+abierto. 250px es el mínimo porque el contenido de una tarjeta mide ~225px (botón 80 + gap + slider
+129).
+
+En mobile (375px medido) siguen apiladas **sin ninguna media query adicional**: dos pistas de 250px
+no entran en el ancho disponible, así que la grilla usa una sola.
+
+### Verificación
+- **E2E: 70 pasan** (eran 67; +3 en `live-compare-controls.spec.ts`), con tres corridas completas
+  consecutivas limpias. **Ningún test existente hubo que actualizar**: los dos de comparación en
+  vivo (`redesign.spec.ts`, `run-panel-tabs.spec.ts`) verifican conteo de paneles y ausencia de
+  overflow horizontal, no la posición de las tarjetas.
+- Unitarios web: 186 pasan, sin cambio — ninguno codificaba esta estructura. API: 218 pasan, 5
+  omitidos, sin tocar.
+- El test de lado a lado **discrimina**: con `grid-template-columns: 1fr` falla. Los otros dos
+  (botón y slider usables, apilado en mobile) siguen pasando a propósito — son guardas de
+  invariante, y si cayeran al quitar la regla de desktop estarían mal escritos.
+
+### Premisa corregida por la medición
+- Mi primera formulación del argumento contra el breakpoint de viewport decía que las tarjetas
+  quedarían "más altas que apiladas". Es falso: medido, 164px contra 240px — el breakpoint ahorra
+  MÁS espacio vertical. El argumento correcto es de ancho usable, no de altura.
+
+---
+
 ## [v0.28.0] — Compresión gzip habilitada en nginx
 
 **Documentos afectados:** `03-arquitectura.md` (v1.8 → v1.9 — fila nueva en §5: compresión gzip en
