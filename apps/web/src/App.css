@@ -256,6 +256,29 @@
   margin-top: 1.5rem;
 }
 
+/*
+ * Las dos tarjetas de ritmo en modo comparación en vivo, lado a lado cuando
+ * hay lugar. Sin breakpoint de viewport a propósito: el ancho de
+ * `.controls-column` no se deduce del viewport — medido a 1280px, mide 1200px
+ * con el formulario colapsado (la regla `:has()` de v0.25.1 deja el layout en
+ * una columna) y 360px con el formulario abierto. Un `@media (min-width:
+ * 900px)` daría dos columnas también a 360px: medido, 172px por tarjeta con
+ * el slider envuelto debajo del botón, para un slider que mide 129px.
+ *
+ * `auto-fit` + `minmax` deja que la grilla resuelva eso sola, contra el ancho
+ * REAL disponible: entran dos pistas de 250px solo a partir de ~516px, y las
+ * pistas vacías se colapsan, así que las dos que quedan se reparten todo el
+ * ancho. Medido: 592px cada una con el formulario colapsado, y una sola
+ * columna de 360px con el formulario abierto, que es el apilado de siempre.
+ * 250px es el mínimo porque el contenido de una tarjeta mide ~225px (botón 80
+ * + gap + slider 129).
+ */
+.live-compare-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
 .playback-controls,
 .population-grid-nav {
   display: flex;

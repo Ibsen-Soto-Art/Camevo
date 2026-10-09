@@ -630,10 +630,17 @@ export default function App() {
             </details>
 
             {compareMode ? (
-              <>
+              /*
+                Las dos tarjetas necesitan un contenedor propio para poder
+                ponerse lado a lado: antes eran hermanas del `<details>` del
+                formulario dentro de `.controls-column`, que es una columna
+                flex, así que no había forma de maquetarlas entre ellas sin
+                afectar también al formulario.
+              */
+              <div className="live-compare-controls">
                 <PlaybackControls key={runA.runId ?? "A"} run={runA} initialSpeed={base.msPerGeneration} label="Corrida A" />
                 <PlaybackControls key={runB.runId ?? "B"} run={runB} initialSpeed={base.msPerGeneration} label="Corrida B" />
-              </>
+              </div>
             ) : (
               <PlaybackControls key={runSingle.runId ?? "single"} run={runSingle} initialSpeed={base.msPerGeneration} />
             )}
