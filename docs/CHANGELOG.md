@@ -6,6 +6,91 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.27.0] — Slider de generaciones en pestaña Población + centrado de grilla
+
+**Documentos afectados:** `03-arquitectura.md` (v1.7 → v1.8 — fila nueva en §5: fuente de verdad
+única para la generación mirada), `02-requisitos.md` (v1.8 → v1.9 — nota de alcance en RF-024: la
+grilla es navegable por generación).
+
+### Added
+- La pestaña Población muestra un slider horizontal que permite navegar generaciones sin salir de
+  la pestaña. Desde v0.26.0 la grilla y la gráfica viven en pestañas separadas, así que el hover
+  —que sigue funcionando— dejó de estar al alcance de quien mira la grilla; el único camino era ir
+  a Gráfica, pasar el mouse y volver.
+- El slider recorre **todos** los snapshots de la corrida, no los 300 de la gráfica: el
+  submuestreo LTTB vive dentro de `RunChart` y la grilla siempre recibió el array completo (ver
+  v0.20.2). En una corrida de 1500 generaciones eso son 1500 posiciones, una por generación.
+- Navegable con ← → del teclado, gratis: el valor del slider es el **índice** del snapshot, así que
+  las flechas del `<input type="range">` nativo saltan de un snapshot real al siguiente, sin
+  posiciones intermedias que no existan.
+- Muestra "Generación X / Y", donde Y es la generación del **último snapshot recibido** — no el
+  total configurado, que el panel no conoce (`RunView` son cuatro campos y ninguno es la config).
+  En una corrida en vivo Y crece con cada generación, y en una corrida extinta nunca llega al
+  total pedido, que es exactamente lo que hay que informar.
+- En corridas en vivo el slider sigue al último snapshot automáticamente mientras el usuario no lo
+  haya movido. El botón "↓ Último" vuelve a ese modo automático.
+- La grilla queda centrada horizontalmente. Antes: hueco izquierdo 0px, derecho ~466px. Después:
+  huecos iguales dentro de 2px, con el `ResizeObserver` midiendo el canvas en 700px exactos (caja
+  de 702px por el borde de 1px por lado).
+
+### Decisiones de diseño registradas
+
+**1. El estado vive en `RunPanel`; el markup, en `PopulationGrid`.**
+El slider escribe `hoveredGeneration`, el MISMO estado que mueve el hover de la gráfica, no uno
+nuevo: `PopulationGrid` recibe `onViewGeneration` y renderiza el `<input>`, sin estado propio. La
+distinción importa para leer el código — quien busque el `<input>` en `RunPanel` no lo va a
+encontrar. La alternativa (estado propio en `PopulationGrid`) deja dos fuentes de verdad para el
+mismo dato: el componente recibiría `hoveredGeneration` como prop y a la vez tendría su propia
+posición, y reconciliarlas pide un efecto que corre DESPUÉS del render — un frame con la grilla y
+el panel de valores mostrando generaciones distintas. Sin estado propio el problema no existe.
+
+**2. `displayedIndex` traduce generación → posición; no redondea la entrada del usuario.**
+El slider necesita una posición (un índice), pero `hoveredGeneration` es un número de generación, y
+puede llegar desde el hover de la gráfica. `displayedIndex` resuelve ese número al snapshot más
+cercano del array completo. Hoy la coincidencia es siempre exacta —las generaciones que reporta la
+gráfica salen de `chartRows`, que es un subconjunto de los snapshots— así que la búsqueda por
+proximidad es defensiva, igual que ya lo era en el memo que elegía el snapshot a dibujar. El
+cálculo pasó de devolver el snapshot a devolver su índice justamente porque el slider necesita la
+posición, y `showingLatestSnapshot` se volvió una comparación de índices en vez de una comparación
+de identidad.
+
+**3. `RunChart` pasó a controlado, con búsqueda por proximidad.**
+Antes tenía su propio estado de hover y solo lo espejaba hacia arriba, sin ninguna prop de entrada:
+el slider movía la grilla pero no el panel de valores de la otra pestaña. Ahora acepta
+`hoveredGeneration` y queda controlado cuando la recibe (`undefined` —no `null`— mantiene el modo
+no controlado, que es el que usan los tests que montan el gráfico solo). Y acá sí hacía falta la
+proximidad de verdad, en la dirección contraria a la del punto 2: el slider recorre los 1500
+snapshots mientras `chartRows` tiene 300 post-LTTB, así que una búsqueda exacta no encontraba nada
+en ~4 de cada 5 posiciones y el panel de valores se vaciaba al cambiar de pestaña.
+
+**4. "↓ Último" acotado a corridas en vivo y a que el usuario se haya movido.**
+En una corrida terminada el extremo derecho del slider no se mueve más, así que arrastrar hasta el
+final YA es ir al último y el botón no agregaría nada. En vivo sin que el usuario lo haya tocado, el
+modo automático ya está activo. Aparece exactamente cuando hace falta. Vuelve a `null` —el modo
+automático— y no a la última generación como número, que se congelaría de nuevo con el próximo
+snapshot. `RunPanel` lo habilita pasando `onViewLatest` solo mientras la corrida está en vivo: mismo
+idioma que `onSave`, donde la presencia de la prop es lo que habilita el botón.
+
+### Mediciones
+| Qué | Valor medido |
+| --- | --- |
+| Sincronización slider → gráfica | slider en la generación 89 → el panel de valores de la pestaña Gráfica marca "Generación 89" |
+| Sincronización gráfica → slider | hover sobre la gráfica → el slider se posiciona en esa misma generación, con la grilla ya dibujándola |
+| Centrado (antes) | hueco izquierdo 0px, derecho ~466px |
+| Centrado (después) | huecos iguales dentro de 2px |
+| Canvas tras el centrado | 700px exactos (caja de 702px por el borde) — `ResizeObserver` intacto |
+| Ancho del slider | 129px con el default del navegador → 1128px con `flex: 1` (~11,6 → ~1,3 generaciones por pixel sobre 1500) |
+
+### Premisas corregidas por el código
+- El slider NO está limitado a los 300 puntos post-LTTB: ese submuestreo es de la gráfica, y la
+  grilla recibe el array completo. Si lo estuviera, en velocidad Lenta no se podría recorrer
+  generación a generación la recuperación posterior a una catástrofe.
+- El denominador de "Generación X / Y" no puede ser el total configurado: `RunView` no incluye la
+  config de la corrida, y la palabra `generations` no existe en el frontend (el campo del formulario
+  se llama `updates`).
+
+---
+
 ## [v0.26.0] — Pestañas Gráfica / Población en modo una corrida
 
 **Documentos afectados:** `03-arquitectura.md` (v1.6 → v1.7 — fila nueva en §5: pestaña inactiva

@@ -1,6 +1,6 @@
 # CAMEVO — Especificación de Requisitos
 
-**Versión 1.8 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
+**Versión 1.9 — Fase 0 (Documentación) — ver `CHANGELOG.md`**
 
 Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` para no funcionales. Prioridad: **M** (Must — MVP), **S** (Should — fase 2/3), **C** (Could — fase 4+).
 
@@ -69,6 +69,8 @@ Convención de identificadores: `RF-0xx` para requisitos funcionales, `RNF-0xx` 
 > **Nota de cierre:** RF-023 quedó completo tras una auditoría dedicada (fuera de cualquier fase numerada, ver `04-roadmap-fases.md`, "Deuda de alcance cerrada fuera de fase"). Cerró tres huecos reales: pausar (con congelamiento real del motor — `advanceGeneration` no avanza mientras está pausado, para no romper RNF-003), `msPerGeneration` configurable al arrancar y ajustable en vivo, y un botón de reinicio explícito (antes solo funcionaba reenviando el formulario, sin ninguna señal de que eso era lo que hacía).
 
 > **Nota de cierre:** RF-024 quedó completo con un componente `PopulationGrid` (canvas, no SVG — hasta 1600 celdas actualizándose por WebSocket harían que SVG reconciliara demasiados nodos DOM por generación). Cada celda ocupada se colorea con un gradiente continuo según el fitness del organismo, normalizado contra el máximo histórico de ESA corrida (no el máximo de cada snapshot individual — decisión deliberada: `fitness` crece con la duración de la corrida, no con qué tan sana está, así que normalizar por snapshot haría ver "saludable" a una población objetivamente débil justo antes de un colapso). Las celdas sin organismo se muestran con un color de fondo distinto — hábitat perdido. El diseño del snapshot liviano (`03-arquitectura.md`, sección 4, punto 5) anticipó exactamente este momento: `OrganismSummary {id, x, y, fitness}` es precisamente lo que este componente necesita, sin haber tenido que agregar ningún campo nuevo al snapshot para la grilla en sí.
+
+> **Nota de alcance (`CHANGELOG.md` v0.27.0):** desde v0.27.0 la grilla es **navegable por generación**: un slider en la pestaña Población recorre todos los snapshots de la corrida, también en una corrida ya guardada. La fuente de verdad de qué generación se está mirando es `hoveredGeneration` en `RunPanel`, **compartida con el hover de la gráfica** (v0.23.0), así que las dos formas de navegar escriben en el mismo lugar y no pueden mostrar generaciones distintas — ver `03-arquitectura.md` §5. Esto no cambia el cumplimiento de RF-024, que ya era completo; agrega el acceso al pasado de la corrida que antes dependía de tener la gráfica a la vista.
 
 > **Nota de cierre:** RF-027 quedó completo (`CHANGELOG.md` v0.16.0) con un endpoint de detalle bajo demanda (`GET /runs/:runId/organisms/:organismId`), no con una vista de organismo separada como sugería la redacción original — un click en una celda de la grilla (RF-024) abre un panel con fitness, tareas resueltas, generación y posición, en lenguaje llano. Alcance reducido respecto al diseño original: solo sirve la generación ACTUAL de una corrida que sigue en vivo en el proceso del servidor, nunca generaciones pasadas ni corridas ya guardadas — el genoma y las tareas resueltas de un organismo nunca se persisten (ver `03-arquitectura.md` §4.1 para el detalle completo de esta decisión, tomada en el mismo commit de implementación).
 
