@@ -6,6 +6,81 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.26.0] — Pestañas Gráfica / Población en modo una corrida
+
+**Documentos afectados:** `03-arquitectura.md` (v1.6 → v1.7 — fila nueva en §5: pestaña inactiva
+montada y medible).
+
+### Added
+- El modo "Una corrida" muestra dos pestañas en vez de una sola columna con scroll:
+  - **Gráfica** (activa por defecto): la gráfica de líneas, el panel de valores fijo, los
+    captions, el panel explicativo y el botón "Guardar esta corrida".
+  - **Población**: la grilla poblacional, la leyenda de éxito reproductivo y la inspección de
+    organismo (RF-027).
+  - Fuera de las pestañas, siempre visible: el `runId` y el estado de la corrida (en curso /
+    finalizada / conexión perdida). El estado no puede vivir en una pestaña: es por donde sale
+    "Conexión perdida" (v0.24.0), y alguien mirando la otra no se enteraría de que se cortó el
+    WebSocket.
+- Las pestañas no aparecen hasta el primer snapshot — antes de eso no hay grilla que mostrar, así
+  que "Población" sería una pestaña vacía en la que el usuario puede hacer click para no encontrar
+  nada. Hasta entonces la gráfica vacía se muestra suelta, como siempre.
+- Accesibilidad completa: `role="tablist"`/`"tab"`/`"tabpanel"`, `aria-selected`, `aria-controls` ↔
+  `aria-labelledby`, activación con Enter y Espacio (gratis: son `<button>` nativos), y sin trampas
+  de foco — ver la técnica de montado abajo.
+- Solo en modo "Una corrida": los dos modos de comparación (en vivo y guardadas) no cambian. Ahí
+  hay dos paneles lado a lado, y partir cada uno en pestañas multiplicaría los clicks sin resolver
+  el scroll, que en ese modo ya está acotado por `chartHeight={320}`.
+
+### Técnica de montado: por qué `position: absolute` + `opacity: 0` + `inert`
+La pestaña inactiva permanece **montada y medible** — el `ResponsiveContainer` de la gráfica y el
+`ResizeObserver` de la grilla necesitan ver su ancho real para que la pestaña se revele ya dibujada
+y sincronizada. Alternativas descartadas:
+
+- **`display: none` / `height: 0`**: el componente no ocupa espacio, así que las dos mediciones
+  dan 0 y la gráfica y la grilla se rompen al revelar la pestaña.
+- **`visibility: hidden`**: conserva el layout, pero combinada con `height: 0` dejaba 21px
+  residuales medidos en el panel de la grilla, del `padding-top: 1.25rem` + `border-top: 1px` que
+  existían para separarla de la gráfica cuando las dos estaban apiladas. Dentro de una pestaña no
+  hay nada arriba de lo que separarse, así que se neutralizan igual (`.run-tabpanel
+  .population-grid`), pero eso era el síntoma y no la causa.
+- **`opacity: 0` sola**: conserva el layout y el ancho real, pero **no** saca el contenido del
+  orden de tabulación ni del árbol de accesibilidad (a diferencia de `visibility: hidden`). Los 8
+  elementos focusables de la pestaña oculta — los ítems de la leyenda con `tabIndex={0}` y el botón
+  de guardar — seguirían alcanzables con Tab, invisibles. Una trampa de foco, y en contradicción
+  con el `aria-selected` que la pestaña declara.
+- **`position: absolute` sin `left/right: 0`**: un absoluto toma ancho *shrink-to-fit*, así que la
+  grilla mediría un ancho equivocado — justo la medición que la técnica busca preservar.
+
+La combinación elegida es `position: absolute; left: 0; right: 0; opacity: 0; pointer-events: none`
+más el atributo `inert`, que quita el panel del orden de tabulación y del árbol de accesibilidad
+sin afectar el layout. Verificado con un recorrido real de Tab: 12 pulsaciones, 0 aterrizajes
+dentro del panel inerte.
+
+Sin `min-height` en el contenedor: la pestaña **activa** queda en el flujo normal y su alto
+gobierna el del contenedor. Un número fijo recortaría o dejaría hueco según cuál esté activa,
+porque la gráfica y la grilla miden distinto (796px vs. 852px, medidos).
+
+### Mediciones que confirman la técnica
+| Qué | Valor medido |
+| --- | --- |
+| Ancho de los dos paneles (activo u oculto) | 1166px los dos — lo garantiza `left/right: 0` |
+| Grilla oculta: `gridWidth` / canvas | 1166px / 700px, con `opacity: 0` e `inert` presentes |
+| Sincronización hover → pestaña | el hover marcó la generación 89 con la grilla oculta; al revelarla ya leía "Estás viendo la generación 89", **sin volver a pasar el mouse** |
+| Ida y vuelta de la gráfica | área de trazado 996px antes y después, idéntica |
+| Alto del contenedor | 796px en Gráfica, 852px en Población — lo gobierna la pestaña activa, sin `min-height` fijo |
+
+### Fix colateral
+- Dos specs existentes codificaban la estructura vieja y se reescribieron **sin aflojarlas**:
+  `organism-inspect.spec.ts` ahora abre la pestaña "Población" antes de clickear el canvas (un paso
+  real del usuario, no un rodeo), y tiene que **esperarla**: las pestañas aparecen con el primer
+  snapshot, mientras el estado de la corrida llega a "en curso" antes de eso. `redesign.spec.ts`
+  verificaba que `.save-run` viniera después de `.explanatory-panel` buscando entre los hijos
+  directos de `.run-panel`, y ahora los dos viven dentro del `tabpanel` de Gráfica: la aserción se
+  reescribió con `compareDocumentPosition`, que mide la misma intención sin depender de a qué
+  profundidad estén.
+
+---
+
 ## [v0.25.1] — Layout expansible al colapsar el formulario
 
 **Documentos afectados:** `03-arquitectura.md` (v1.5 → v1.6 — fila nueva en §5: CSS `:has()`
