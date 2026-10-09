@@ -59,6 +59,26 @@ function sleep(ms: number): Promise<void> {
 /** 30s: por debajo de los cortes por inactividad habituales (~60s) y con margen para perder un latido antes de que el cliente, que espera el doble, declare la conexión muerta. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+/**
+ * Tope del buffer de salida del socket antes de empezar a saltear envíos.
+ *
+ * 256 KB son ~4 snapshots de una grilla 40x40 (66,1 KB cada uno, medido), o
+ * ~15 de una 20x20 (16,9 KB). Es la cota del atraso que puede acumular la
+ * vista en vivo: a los 166 KB/s que mide un enlace congestionado, drenar 256
+ * KB toma ~1,5s, muy por debajo del timeout de 60s del watchdog del cliente.
+ *
+ * El problema que esto resuelve: el `ping` del heartbeat viaja por el MISMO
+ * stream TCP ordenado que los snapshots, así que queda bloqueado detrás de
+ * cualquier atraso. Sin este tope el atraso no está acotado — reproducido
+ * contra producción con grilla 40x40 y enlace de 2 Mbps: el servidor ofrece
+ * 6,8 Mbps a ritmo 80ms, el cliente recibió 428 de 1500 snapshots, de los 5
+ * pings enviados llegó UNO solo, y el watchdog declaró "Conexión perdida"
+ * sobre una conexión viva mientras ~71 MB esperaban en el buffer. Subir el
+ * timeout del cliente no arregla eso: el atraso crece mientras el servidor
+ * produzca más rápido de lo que el enlace entrega.
+ */
+const BACKPRESSURE_HIGH_WATER_MARK = 256 * 1024;
+
 export async function streamRunLive(
   runId: string,
   config: SimulationConfig,
@@ -93,6 +113,11 @@ export async function streamRunLive(
     }
   }, HEARTBEAT_INTERVAL_MS);
 
+  /** Estado del log de congestión: se reporta la transición, no cada snapshot. */
+  let congested = false;
+  let skippedWhileCongested = 0;
+  let skippedTotal = 0;
+
   try {
     for (let i = 0; i < config.updates && !closed; i++) {
       await control.waitIfPaused();
@@ -113,8 +138,76 @@ export async function streamRunLive(
       const snapshotJson = JSON.stringify(snapshot);
       registry.appendSnapshot(runId, snapshotJson);
 
+      /*
+       * Generaciones que se envían SIEMPRE, sin importar el buffer: las que
+       * el usuario no puede reconstruir si se las saltea.
+       *
+       * - `catastropheOccurred`: es el evento puntual de RF-015, y el
+       *   marcador de la gráfica y el destello de la grilla dependen de que
+       *   ese snapshot exista del lado del cliente. Ocurre cada 10/60/150
+       *   generaciones según la velocidad, así que en el peor caso (Rápida)
+       *   fuerza el 10% de los envíos — no desarma el backpressure.
+       * - `extinct`: el loop corta justo después, así que es el último
+       *   snapshot de la corrida. Saltearlo dejaría al cliente sin la razón
+       *   del corte.
+       * - la última generación pedida: el cierre de la narrativa, y el punto
+       *   que ancla la gráfica y el estado final de la grilla.
+       *
+       * `nearExtinct` NO está en la lista a propósito: su contrato
+       * (shared-types) dice que se mantiene mientras la población siga bajo
+       * el umbral, o sea potencialmente cientos de generaciones seguidas.
+       * Marcarlo crítico desactivaría el backpressure entero justo en la
+       * fase de población baja, que es la más lenta y la más interesante.
+       */
+      const criticalGeneration = snapshot.catastropheOccurred || snapshot.extinct || i === config.updates - 1;
+
       if (socket.readyState === socket.OPEN) {
-        socket.send(`{"type":"snapshot","snapshot":${snapshotJson}}`);
+        /*
+         * `?? 0` no es paranoia: una implementación de socket que no exponga
+         * `bufferedAmount` daría `undefined`, y `undefined <= N` es `false`,
+         * así que TODO snapshot no crítico se saltearía en silencio. Ante la
+         * duda, el comportamiento correcto es el de siempre (enviar), no el
+         * degradado. Lo detectó el FakeSocket de los tests, que no la tenía.
+         *
+         * Se lee UNA sola vez a una variable: en `ws` esta propiedad es un
+         * getter que recorre la cola de envío, así que leerla dos veces (una
+         * para el `typeof` y otra para el valor) costaría el doble y las dos
+         * lecturas podrían no coincidir.
+         */
+        const reported: unknown = socket.bufferedAmount;
+        const buffered = typeof reported === "number" ? reported : 0;
+        if (criticalGeneration || buffered <= BACKPRESSURE_HIGH_WATER_MARK) {
+          socket.send(`{"type":"snapshot","snapshot":${snapshotJson}}`);
+          if (congested) {
+            console.log(
+              `[camevo] run ${runId}: fin de congestión en la generación ${snapshot.generation} ` +
+                `(buffer ${buffered} B, ${skippedWhileCongested} snapshots salteados)`,
+            );
+            congested = false;
+            skippedWhileCongested = 0;
+          }
+        } else {
+          /*
+           * Se saltea el ENVÍO, no la generación: `registry.appendSnapshot`
+           * ya guardó este snapshot más arriba, así que "Guardar esta
+           * corrida" persiste las 1500 generaciones completas. Lo que
+           * submuestrea es la vista en vivo, y solo mientras el enlace no da.
+           *
+           * Se loguea al ENTRAR y al SALIR de la congestión en vez de una
+           * línea por snapshot: con un enlace lento esto último son miles de
+           * líneas por corrida, en un VPS de 2 vCPU donde el disco y el
+           * propio I/O de log compiten con el motor.
+           */
+          if (!congested) {
+            congested = true;
+            console.log(
+              `[camevo] run ${runId}: congestión en la generación ${snapshot.generation} ` +
+                `(buffer ${buffered} B > ${BACKPRESSURE_HIGH_WATER_MARK} B) — se saltean envíos hasta que drene`,
+            );
+          }
+          skippedWhileCongested += 1;
+          skippedTotal += 1;
+        }
       }
 
       if (snapshot.extinct) break;
@@ -130,5 +223,11 @@ export async function streamRunLive(
   } finally {
     clearInterval(heartbeat);
     registry.markFinished(runId);
+    if (skippedTotal > 0) {
+      console.log(
+        `[camevo] run ${runId}: ${skippedTotal} envíos salteados por backpressure ` +
+          `(la corrida guardada conserva todas las generaciones)`,
+      );
+    }
   }
 }

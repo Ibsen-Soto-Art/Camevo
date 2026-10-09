@@ -9,13 +9,22 @@ import { PlaybackControl } from "../../src/api/ws/playback-control";
 import { SimulationConfig } from "../../src/simulation/orchestrator/run";
 import type { LiveMessage } from "@camevo/shared-types";
 
-/** WebSocket falso mínimo: solo lo que streamRunLive realmente usa. */
+/**
+ * WebSocket falso mínimo: solo lo que streamRunLive realmente usa.
+ *
+ * `bufferedAmount` es parte de ese mínimo desde que existe el backpressure:
+ * sin ella, el doble devolvía `undefined`, y como `undefined <= N` es `false`
+ * el servidor saltearía todos los envíos no críticos. El default de 0 es "el
+ * socket drena al instante", que es el caso de un enlace rápido.
+ */
 class FakeSocket extends EventEmitter {
   static readonly OPEN = 1;
   readonly OPEN = FakeSocket.OPEN;
   readyState = FakeSocket.OPEN;
   readonly sent: LiveMessage[] = [];
   closed = false;
+  /** Sobrescribible por los tests de backpressure para simular congestión. */
+  bufferedAmount = 0;
 
   send(data: string): void {
     this.sent.push(JSON.parse(data) as LiveMessage);
@@ -361,5 +370,162 @@ describe("streamRunLive — latido (heartbeat)", () => {
 
     expect(socket.sent.filter((m) => m.type === "ping")).toHaveLength(0);
     expect(socket.sent.at(-1)?.type).toBe("done");
+  });
+});
+
+/**
+ * Backpressure (ver BACKPRESSURE_HIGH_WATER_MARK en ws/live-run.ts). Lo que
+ * se verifica acá es la decisión de ENVIAR o SALTEAR según el buffer de
+ * salida del socket, y que saltear nunca pierda una generación crítica ni una
+ * generación del registro — la corrida guardada tiene que seguir completa.
+ */
+describe("streamRunLive — backpressure", () => {
+  /**
+   * Socket cuyo `bufferedAmount` sigue un guion: una entrada por lectura, y
+   * `streamRunLive` lo lee exactamente una vez por generación. Así el test
+   * fija la congestión en generaciones concretas en vez de depender de
+   * tiempos reales, que serían inestables.
+   */
+  class ScriptedSocket extends FakeSocket {
+    reads = 0;
+    constructor(plan: readonly number[]) {
+      super();
+      /*
+       * `defineProperty` y no un getter de clase: `FakeSocket` declara
+       * `bufferedAmount` como CAMPO, y un campo crea una propiedad propia en
+       * la instancia que tapa cualquier accessor del prototipo de la
+       * subclase. Definirla acá, después de `super()`, reemplaza esa
+       * propiedad propia. (Primera versión de este test: el guion se
+       * ignoraba y no se salteaba nada.)
+       */
+      Object.defineProperty(this, "bufferedAmount", {
+        get: () => {
+          const value = plan[this.reads] ?? 0;
+          this.reads += 1;
+          return value;
+        },
+      });
+    }
+  }
+
+  function config(overrides: Partial<SimulationConfig> = {}): SimulationConfig {
+    return {
+      gridWidth: 6,
+      gridHeight: 6,
+      baseCyclesPerUpdate: 20,
+      mutationRate: 0.05,
+      ancestorGenomes: [createUniformGenome("replicate", 12)],
+      placementMode: "near-parent",
+      updates: 10,
+      seed: 99,
+      ...overrides,
+    };
+  }
+
+  function sentGenerations(socket: FakeSocket): number[] {
+    return socket.sent
+      .filter((m): m is Extract<LiveMessage, { type: "snapshot" }> => m.type === "snapshot")
+      .map((m) => m.snapshot.generation);
+  }
+
+  const CONGESTED = 512 * 1024;
+
+  it("saltea los envíos mientras el buffer está por encima del tope, y los retoma cuando drena", async () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    // Buffer: holgado hasta la generación 3, congestionado en 4-6, drenado en 7.
+    const socket = new ScriptedSocket([0, 0, 0, 0, CONGESTED, CONGESTED, CONGESTED, 0, 0, 0]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(runId, config(), socket as any, new PlaybackControl(0), registry);
+
+    const sent = sentGenerations(socket);
+    expect(sent).not.toContain(4);
+    expect(sent).not.toContain(5);
+    expect(sent).not.toContain(6);
+    expect(sent).toContain(3);
+    expect(sent).toContain(7);
+    // Y el registro conserva TODAS: es lo que persiste "Guardar esta corrida".
+    expect(registry.get(runId)!.snapshots).toHaveLength(10);
+  });
+
+  it("una generación con catástrofe se envía igual, con el buffer por encima del tope", async () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    const socket = new ScriptedSocket([0, 0, 0, 0, CONGESTED, CONGESTED, CONGESTED, 0, 0, 0]);
+
+    await streamRunLive(
+      runId,
+      // Catástrofe cada 5 generaciones y severidad baja: cae en la generación
+      // 5, en plena ventana congestionada, sin extinguir la población.
+      config({ catastrophe: { intervalGenerations: 5, severity: 0.1 } }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      socket as any,
+      new PlaybackControl(0),
+      registry,
+    );
+
+    const snapshots = socket.sent.filter((m): m is Extract<LiveMessage, { type: "snapshot" }> => m.type === "snapshot");
+    const gen5 = snapshots.find((m) => m.snapshot.generation === 5);
+    expect(gen5, "la generación con catástrofe no puede saltearse").toBeDefined();
+    expect(gen5!.snapshot.catastropheOccurred).toBe(true);
+    // Sus vecinas no críticas de la misma ventana sí se saltean.
+    const sent = sentGenerations(socket);
+    expect(sent).not.toContain(4);
+    expect(sent).not.toContain(6);
+  });
+
+  it("la última generación pedida se envía igual, con el buffer por encima del tope", async () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    // Congestión sostenida justo sobre el final de la corrida.
+    const socket = new ScriptedSocket([0, 0, 0, 0, 0, 0, 0, CONGESTED, CONGESTED, CONGESTED]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(runId, config({ updates: 10 }), socket as any, new PlaybackControl(0), registry);
+
+    const sent = sentGenerations(socket);
+    expect(sent).toContain(9); // updates - 1: el cierre de la narrativa
+    expect(sent).not.toContain(8);
+    // Y el "done" llega siempre: no pasa por el chequeo de buffer.
+    expect(socket.sent.some((m) => m.type === "done")).toBe(true);
+    expect(socket.closed).toBe(true);
+  });
+
+  it("con el buffer siempre holgado no saltea nada — el enlace rápido se comporta igual que antes", async () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    const socket = new ScriptedSocket([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(runId, config(), socket as any, new PlaybackControl(0), registry);
+
+    expect(sentGenerations(socket)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(registry.get(runId)!.snapshots).toHaveLength(10);
+  });
+
+  it("un socket sin `bufferedAmount` envía todo en vez de saltear todo", async () => {
+    const runId = randomUUID();
+    const registry = createLiveRunRegistry();
+    registerPending(registry, runId);
+    const socket = new FakeSocket();
+    /*
+     * Se BORRA la propiedad en vez de asignarle `undefined`: con
+     * `exactOptionalPropertyTypes` esa asignación no typechequea, y además
+     * borrarla reproduce mejor el caso real — un socket que simplemente no
+     * expone `bufferedAmount`. `undefined <= N` es false, así que sin el
+     * guardia de tipo del servidor esto saltearía cada snapshot no crítico
+     * en silencio.
+     */
+    delete (socket as Partial<FakeSocket>).bufferedAmount;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await streamRunLive(runId, config(), socket as any, new PlaybackControl(0), registry);
+
+    expect(sentGenerations(socket)).toHaveLength(10);
   });
 });
