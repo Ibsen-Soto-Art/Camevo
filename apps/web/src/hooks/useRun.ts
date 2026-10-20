@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { connectToRunStream, createRun, saveRun, type GenerationSnapshot, type RunFormValues, type RunStreamHandle } from "../lib/camevo-client";
 
 export type RunStatus = "idle" | "running" | "paused" | "done" | "error";
@@ -114,6 +114,16 @@ export function useRun(): RunHandle {
   const setSpeed = useCallback((msPerGeneration: number) => {
     streamRef.current?.send({ type: "setSpeed", msPerGeneration });
   }, []);
+
+  /*
+   * Cierra el stream si este hook se desmonta con una corrida en curso. Hoy no
+   * es alcanzable —los tres `useRun()` están en el cuerpo de `App` sin
+   * condición y `App` nunca se desmonta— pero sin esto el socket y su watchdog
+   * quedarían vivos y el servidor seguiría calculando generaciones que nadie
+   * va a recibir. Es la contraparte en el cliente del `finally` de
+   * `streamRunLive`, que libera el lado del servidor pase lo que pase.
+   */
+  useEffect(() => () => streamRef.current?.close(), []);
 
   const save = useCallback(async () => {
     if (!runId) return;
