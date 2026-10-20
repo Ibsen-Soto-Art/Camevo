@@ -5,6 +5,20 @@ const EMPTY_CELL_COLOR = "#2a2a2a";
 const DEFAULT_DISPLAY_SIZE = 400;
 const MAX_DISPLAY_SIZE = 700;
 /**
+ * Ancho del borde del canvas por lado, en px CSS (`.population-grid canvas`
+ * en App.css). Hay que descontarlo del tamaño medido: `getBoundingClientRect`
+ * y `style.width` son border-box, así que poner el ancho del contenedor como
+ * `style.width` dejaba el canvas 2px MÁS ANCHO que su contenedor — medido en
+ * los cuatro viewports donde la grilla es visible (295 contra 293 a 375px, 688
+ * contra 686 a 768px), creando un scroller horizontal en `.run-tabpanels`.
+ *
+ * No se arregla con `box-sizing: border-box`: eso dejaría el bitmap del canvas
+ * (displaySize × dpr) distinto del tamaño CSS de su contenido, y el navegador
+ * resamplearía — justo la nitidez que el escalado por devicePixelRatio existe
+ * para conservar.
+ */
+const CANVAS_BORDER_PX = 1;
+/**
  * Ajuste 2 (segunda ronda de re-auditoría de interfaz): el borde rojo
  * perimetral (versión anterior) competía visualmente con las celdas
  * rojas de fitness bajo — mismo lenguaje de color para dos cosas
@@ -236,7 +250,8 @@ export default function PopulationGrid({
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
       if (width && width > 0) {
-        setDisplaySize(Math.min(Math.round(width), MAX_DISPLAY_SIZE));
+        const usable = Math.round(width) - CANVAS_BORDER_PX * 2;
+        setDisplaySize(Math.max(1, Math.min(usable, MAX_DISPLAY_SIZE)));
       }
     });
     observer.observe(container);
@@ -315,26 +330,41 @@ export default function PopulationGrid({
     if (!ctx) return;
 
     const dpr = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
-    canvas.width = displaySize * dpr;
-    canvas.height = displaySize * dpr;
-    canvas.style.width = `${displaySize}px`;
-    canvas.style.height = `${displaySize}px`;
+
+    /*
+     * Celdas CUADRADAS: el lado se elige con el mínimo entre el ancho
+     * disponible y el alto presupuestado, así que el canvas ya no es siempre
+     * cuadrado — una grilla 40x20 se dibuja con el doble de ancho que de alto,
+     * que es su forma real. Antes el canvas era cuadrado siempre y las celdas
+     * de una grilla no cuadrada salían estiradas (2:1 en ese ejemplo).
+     *
+     * `MAX_DISPLAY_SIZE` hace de presupuesto de ALTO: no hay un contenedor con
+     * altura propia contra el que medir (la grilla vive en una página que
+     * scrollea), así que el tope que ya acotaba el lado del canvas cumple ese
+     * papel. Consecuencia: el canvas nunca excede `displaySize` de ancho ni
+     * `MAX_DISPLAY_SIZE` de alto.
+     */
+    const cell = Math.min(displaySize / gridWidth, MAX_DISPLAY_SIZE / gridHeight);
+    const canvasWidth = cell * gridWidth;
+    const canvasHeight = cell * gridHeight;
+
+    canvas.width = Math.round(canvasWidth * dpr);
+    canvas.height = Math.round(canvasHeight * dpr);
+    canvas.style.width = `${canvasWidth}px`;
+    canvas.style.height = `${canvasHeight}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // a partir de acá, todas las coordenadas son en px CSS, no físicos
 
-    const cellWidth = displaySize / gridWidth;
-    const cellHeight = displaySize / gridHeight;
-
     ctx.fillStyle = EMPTY_CELL_COLOR;
-    ctx.fillRect(0, 0, displaySize, displaySize);
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     for (const organism of latest.organisms) {
       ctx.fillStyle = fitnessColor(organism.fitness / historicalMaxFitness);
-      ctx.fillRect(organism.x * cellWidth, organism.y * cellHeight, cellWidth, cellHeight);
+      ctx.fillRect(organism.x * cell, organism.y * cell, cell, cell);
     }
 
     if (showCatastropheOverlay) {
       ctx.fillStyle = CATASTROPHE_OVERLAY_FILL;
-      ctx.fillRect(0, 0, displaySize, displaySize);
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     }
   }, [latest, gridWidth, gridHeight, historicalMaxFitness, displaySize, showCatastropheOverlay]);
 
@@ -351,11 +381,18 @@ export default function PopulationGrid({
     const canvas = canvasRef.current;
     if (!canvas || !latest) return;
 
+    /*
+     * `getBoundingClientRect` es border-box, así que hay que descontar el
+     * borde en los dos ejes: sin eso la celda calculada sale ~0,1% más grande
+     * y el error se acumula hacia el borde derecho/inferior de la grilla.
+     */
     const rect = canvas.getBoundingClientRect();
-    const cellWidth = rect.width / gridWidth;
-    const cellHeight = rect.height / gridHeight;
-    const gridX = Math.floor((event.clientX - rect.left) / cellWidth);
-    const gridY = Math.floor((event.clientY - rect.top) / cellHeight);
+    const innerWidth = rect.width - CANVAS_BORDER_PX * 2;
+    const innerHeight = rect.height - CANVAS_BORDER_PX * 2;
+    const cellWidth = innerWidth / gridWidth;
+    const cellHeight = innerHeight / gridHeight;
+    const gridX = Math.floor((event.clientX - rect.left - CANVAS_BORDER_PX) / cellWidth);
+    const gridY = Math.floor((event.clientY - rect.top - CANVAS_BORDER_PX) / cellHeight);
 
     const organism = latest.organisms.find((o) => o.x === gridX && o.y === gridY);
     if (!organism) {

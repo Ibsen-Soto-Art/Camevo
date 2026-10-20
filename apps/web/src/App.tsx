@@ -301,7 +301,23 @@ export default function App() {
   // nunca reafirmamos un `open` distinto sin también cambiar la key). En
   // modo comparación no hay presets, así que ese key/open sigue exactamente
   // como antes.
-  const singleConfigOpen = !runSingle.runId && !selectedScenarioId;
+  /*
+   * 2.4a: en pantallas chicas el formulario arranca COLAPSADO. Medido a 375px:
+   * la página pasa de 2903px de alto a 1601px — 1302px menos, un 45%, o sea de
+   * 3,6 pantallas de scroll antes de poder empezar a 2,0. El hero y los tres
+   * escenarios siguen visibles, que es el camino previsto para alguien que
+   * entra por primera vez (RNF-004); el formulario completo es para quien
+   * quiere ajustar parámetros, y se abre con un toque.
+   *
+   * Se lee una sola vez al montar, no con un listener de resize: reabrir o
+   * cerrar el formulario al rotar el teléfono sería un salto de layout que el
+   * usuario no pidió. `matchMedia` puede no existir en jsdom, de ahí el
+   * guardia.
+   */
+  const [startsCollapsed] = useState(
+    () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches,
+  );
+  const singleConfigOpen = !runSingle.runId && !selectedScenarioId && !startsCollapsed;
   const configStartedKey = compareMode
     ? String(Boolean(runA.runId || runB.runId))
     : `${String(Boolean(runSingle.runId))}-${selectedScenarioId ?? "custom"}`;

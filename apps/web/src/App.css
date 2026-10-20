@@ -37,7 +37,16 @@
   color: var(--color-accent);
 }
 
-/* Labels de controles diferenciados del contenido principal (que sigue en 1rem por defecto) — antes solo eran un poco más chicos (0.85rem); ahora también distintos en peso/color/tracking, no solo en tamaño. */
+/* Labels de controles diferenciados del contenido principal (que sigue en 1rem por defecto) — antes solo eran un poco más chicos (0.85rem); ahora también distintos en peso/color/tracking, no solo en tamaño.
+
+   El piso de 14px para estos labels se aplica en el bloque @media de 640px
+   que ya existe, NO con `clamp()`: clamp interpola hacia ARRIBA con el
+   viewport, así que no puede expresar "más grande en pantallas chicas" — con
+   el mínimo por encima del máximo devuelve siempre el mínimo y se pierde la
+   jerarquía en desktop. No se agrega un breakpoint nuevo, se reusa el de 640px.
+   Los captions (.chart-caption, .population-grid-caption y compañía, 12,5px
+   medidos) se dejan como están a propósito: subirlos aplanaría una jerarquía
+   deliberada sin que nadie tenga que leerlos para operar la app. */
 .run-form label,
 .mode-select label {
   color: var(--color-text-secondary);
@@ -130,6 +139,14 @@
   gap: 1rem;
 }
 
+/* El `summary` es el control que abre y cierra el formulario, así que cuenta
+   como objetivo táctil. `display: flex` para que el texto quede centrado
+   cuando el min-height de `pointer: coarse` manda. */
+.config-details > summary {
+  display: flex;
+  align-items: center;
+}
+
 .config-details {
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -184,12 +201,30 @@
   gap: 0.25rem;
 }
 
+/* P0: los dos checkboxes medían 13x13px — 9 veces menos área que el mínimo
+   táctil, el único control realmente inoperable con el dedo. 24px es el tamaño
+   del control; los 44px de objetivo los da el `min-height` del label, que es
+   lo que recibe el click (está asociado por envoltura). */
+.run-form label.checkbox input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
+  accent-color: var(--color-accent);
+}
+
 .run-form label.checkbox {
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
 }
 
+/* Objetivo táctil mínimo de 44px (WCAG 2.5.8 AAA / guías de iOS y Android).
+   Medido antes del cambio: inputs 35px, selects 37px, botones 36-37px, el
+   `summary` 34px — NINGÚN control llegaba. `min-height` y no una media query
+   porque un objetivo chico no es más fácil de acertar con mouse: solo es más
+   perdonable. El padding se mantiene para que el texto no quede pegado al
+   borde cuando el min-height es lo que decide la altura. */
 .run-form input,
 .run-form select,
 .mode-select select,
@@ -407,6 +442,23 @@
 @media (max-width: 640px) {
   .run-panel h2 {
     font-size: 1.375rem;
+  }
+
+  /* 2.4c: en móvil los sliders pasan DEBAJO de los botones y a ancho completo.
+     Medido antes: el slider de ritmo quedaba en 129px al lado de un botón de
+     83px dentro de una tarjeta de 327px — un objetivo de arrastre de 129px
+     para recorrer 0-500 ms, o 1500 generaciones en el de la grilla. El
+     contenedor ya es `flex-wrap: wrap`, así que basta forzar el ancho completo
+     del label para que el slider caiga a su propia fila. */
+  .playback-controls label,
+  .population-grid-nav label {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .playback-controls input[type="range"],
+  .population-grid-nav input[type="range"] {
+    width: 100%;
   }
 }
 
@@ -628,6 +680,22 @@
   gap: 0.25rem;
   margin-top: 1.25rem;
   border-bottom: 1px solid var(--color-border);
+  /* 2.4d: si las pestañas no entran en una línea, se desplazan en horizontal
+     en vez de envolver o desbordar. `overflow-x: auto` sin `flex-wrap` las
+     mantiene en una sola fila, así que no cambia el alto del layout vertical.
+     Medido a 375px: las dos pestañas suman 182px de 293 disponibles, así que
+     hoy no se activa — es una red de seguridad para rótulos más largos o
+     pestañas futuras, no un cambio visible. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.run-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.run-tab {
+  flex-shrink: 0;
 }
 
 .run-tab {
@@ -857,4 +925,72 @@
   color: var(--color-text-secondary);
   font-size: 0.78rem;
   line-height: 1.35;
+}
+
+/* ===========================================================================
+   Ajustes responsive medidos (auditoría de viewports)
+   Van al FINAL del archivo a propósito: varias de estas reglas compiten en
+   especificidad con declaraciones de más arriba (`.load-indicator`,
+   `.playback-controls label`), y con la misma especificidad decide el orden de
+   origen. Puestas antes, quedaban pisadas — medido: las fuentes no cambiaban
+   ni un pixel.
+   =========================================================================== */
+
+/*
+ * Objetivo táctil de 44px (WCAG 2.5.8, guías de iOS y Android). Medido antes:
+ * inputs 35px, selects 37px, botones 36-37px, el `summary` 34px, las tarjetas
+ * de escenario 36px — ningún control llegaba.
+ *
+ * `pointer: coarse` y no un breakpoint de ancho: la consulta describe el
+ * DISPOSITIVO DE ENTRADA, que es de lo que depende el problema. Aplicarlo a
+ * todos los viewports costaba +250px de scroll vertical en desktop (medido:
+ * 1690 → 1940px), que contradice el objetivo de minimizar el scroll, para
+ * resolver un problema que con mouse no existe. Un laptop con pantalla táctil
+ * sí entra, que es el comportamiento correcto.
+ */
+@media (pointer: coarse) {
+  .run-form input,
+  .run-form select,
+  .mode-select select,
+  .saved-compare-header select,
+  .run-form button,
+  .playback-controls button,
+  .population-grid-nav button,
+  .save-run button,
+  .scenario-card,
+  .config-details > summary,
+  .run-form label.checkbox {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 640px) {
+  /*
+   * Piso de 14px para el texto que hay que LEER para operar la app: labels de
+   * los controles, la etiqueta del slider de generaciones y el aviso de carga
+   * (que decide si el botón está habilitado o no). Medidos antes: 13,6px los
+   * labels, 12,8px la etiqueta del slider y el aviso.
+   *
+   * Los captions (.chart-caption, .population-grid-caption, la leyenda de la
+   * grilla — 12,48px medidos) se dejan como están: subirlos aplanaría una
+   * jerarquía deliberada sin que nadie tenga que leerlos para usar la app.
+   */
+  .run-form label,
+  .mode-select label,
+  .playback-controls label,
+  .population-grid-nav label,
+  .load-indicator {
+    font-size: 0.875rem;
+  }
+
+  /*
+   * El `input[type=range]` trae márgenes horizontales por defecto del
+   * navegador, así que `width: 100%` lo dejaba 2px más ancho que su contenedor
+   * — medido como un scroller interno de 261 contra 259 en el label. El ancho
+   * completo sin el margen es lo que realmente cabe.
+   */
+  .playback-controls input[type="range"],
+  .population-grid-nav input[type="range"] {
+    margin-inline: 0;
+  }
 }
