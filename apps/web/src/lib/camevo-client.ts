@@ -49,8 +49,28 @@ export async function createRun(values: RunFormValues): Promise<{ runId: string 
     body: JSON.stringify(values),
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { errors?: string[] };
-    throw new Error(body.errors?.join(", ") ?? `No se pudo crear la corrida (HTTP ${res.status})`);
+    /*
+     * Dos formas de error distintas del servidor: 400 trae `errors` (un
+     * problema por campo) y 422 trae `error`/`message`/`limits` (la
+     * configuración es válida campo a campo pero su carga total supera lo que
+     * el servidor sostiene — RNF-008). Sin leer `message`, un 422 caía en el
+     * genérico "No se pudo crear la corrida (HTTP 422)", que no le dice al
+     * usuario qué cambiar.
+     */
+    const body = (await res.json().catch(() => ({}))) as {
+      errors?: string[];
+      error?: string;
+      message?: string;
+      limits?: { maxCells: number; maxGenerations: number; maxLoad: number };
+    };
+    if (body.errors?.length) throw new Error(body.errors.join(", "));
+    if (body.message) {
+      const limits = body.limits
+        ? ` Máximos: ${body.limits.maxCells} células, ${body.limits.maxGenerations} generaciones, carga ${body.limits.maxLoad}.`
+        : "";
+      throw new Error(`${body.message}${limits}`);
+    }
+    throw new Error(`No se pudo crear la corrida (HTTP ${res.status})`);
   }
   return (await res.json()) as { runId: string };
 }

@@ -51,6 +51,49 @@ describe("api/rest", () => {
     return fetch(`${baseUrl}/runs${query}`, { headers: { "X-Browser-ID": browserId } });
   }
 
+  describe("POST /runs — tope de carga total (RNF-008)", () => {
+    it("rechaza con 422 y el cuerpo documentado cuando la carga supera el máximo", async () => {
+      // 40×40×5000 = 8.000.000: cada campo es válido, el producto no.
+      const res = await postRun({ gridWidth: 40, gridHeight: 40, updates: 5000 });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as {
+        error: string;
+        message: string;
+        limits: { maxCells: number; maxGenerations: number; maxLoad: number };
+      };
+      expect(body.error).toBe("simulation_too_large");
+      expect(body.message).toBe("La configuración supera la capacidad del servidor.");
+      expect(body.limits).toEqual({ maxCells: 1600, maxGenerations: 5000, maxLoad: 3_000_000 });
+    });
+
+    it("422 y no 400: la configuración está bien formada, lo que falta es capacidad", async () => {
+      const tooBig = await postRun({ gridWidth: 40, gridHeight: 40, updates: 5000 });
+      // 400 es para un campo inválido — una grilla de 50 ni llega al tope de carga.
+      const invalidField = await postRun({ gridWidth: 50, gridHeight: 50, updates: 10 });
+      expect(tooBig.status).toBe(422);
+      expect(invalidField.status).toBe(400);
+      expect((await invalidField.json()) as { errors: string[] }).toHaveProperty("errors");
+    });
+
+    it("acepta el borde exacto (40×40×1875 = 3.000.000) y rechaza una generación más", async () => {
+      const borde = await postRun({ gridWidth: 40, gridHeight: 40, updates: 1875 });
+      expect(borde.status).toBe(201);
+      const unoMas = await postRun({ gridWidth: 40, gridHeight: 40, updates: 1876 });
+      expect(unoMas.status).toBe(422);
+    });
+
+    it("una corrida rechazada no queda registrada: no hay nada que limpiar después", async () => {
+      const antes = await listRuns();
+      const antesBody = (await antes.json()) as { runs: unknown[] };
+      await postRun({ gridWidth: 40, gridHeight: 40, updates: 5000 });
+      const despues = await listRuns();
+      const despuesBody = (await despues.json()) as { runs: unknown[] };
+      // GET /runs solo lista las GUARDADAS, así que esto verifica además que
+      // el rechazo ocurra antes de createPending, no después.
+      expect(despuesBody.runs).toHaveLength(antesBody.runs.length);
+    });
+  });
+
   it("POST /runs crea una corrida con valores por defecto razonables", async () => {
     const res = await postRun({});
     expect(res.status).toBe(201);

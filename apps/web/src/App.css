@@ -148,6 +148,27 @@
   margin: 1rem 0 0;
 }
 
+/* RNF-008: aviso de carga del formulario. Ocupa la fila completa de la grilla
+   del formulario (que es `auto-fit, minmax(160px, 1fr)`) para que el texto no
+   quede comprimido en una celda angosta. Los colores reusan los tokens que ya
+   existen en vez de introducir nuevos. */
+.load-indicator {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+/* Mismo ámbar que el overlay de catástrofe y el indicador de generación: en
+   toda la interfaz significa "esto merece atención", no "esto es un error". */
+.load-indicator-near {
+  color: #f59e0b;
+}
+
+.load-indicator-over {
+  color: var(--color-error);
+}
+
 .run-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

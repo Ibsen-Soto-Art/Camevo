@@ -4,7 +4,13 @@ import { randomUUID } from "node:crypto";
 import express, { Express, Request, Response } from "express";
 import { LiveRunRegistry } from "../live-run-registry";
 import { RunRepository } from "../../persistence/repository/types";
-import { CreateRunRequestBody, parseCreateRunRequest } from "./config-request";
+import {
+  CreateRunRequestBody,
+  MAX_SIMULATION_LOAD,
+  SIMULATION_LIMITS,
+  parseCreateRunRequest,
+  simulationLoad,
+} from "./config-request";
 
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
@@ -109,6 +115,28 @@ export function createApp(repository: RunRepository, registry: LiveRunRegistry):
     }
 
     const { config } = parsed;
+
+    /*
+     * RNF-008: el producto células × generaciones, que los límites campo a
+     * campo no pueden acotar. 422 y no 400 a propósito: la configuración está
+     * bien formada y cada campo es válido — lo que no alcanza es la capacidad
+     * del servidor. El cuerpo lleva los tres topes para que el cliente pueda
+     * explicar el rechazo con números en vez de un mensaje genérico.
+     */
+    const load = simulationLoad(config);
+    if (load > MAX_SIMULATION_LOAD) {
+      console.log(
+        `[camevo] corrida rechazada por carga: ${config.gridWidth}x${config.gridHeight}x${config.updates} ` +
+          `= ${load} > ${MAX_SIMULATION_LOAD} (browser ${browserId})`,
+      );
+      res.status(422).json({
+        error: "simulation_too_large",
+        message: "La configuración supera la capacidad del servidor.",
+        limits: SIMULATION_LIMITS,
+      });
+      return;
+    }
+
     const runId = randomUUID();
     registry.createPending(runId, browserId, config);
 

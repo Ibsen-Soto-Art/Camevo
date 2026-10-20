@@ -46,6 +46,29 @@ interface NumericLimit {
  */
 export const CLIMATE_VARIANCE_AMPLITUDE_MAX = 0.5;
 
+/**
+ * RNF-008: tope de la CARGA TOTAL de una corrida (células × generaciones),
+ * no de cada campo por separado.
+ *
+ * Los límites por campo (`LIMITS`, abajo) ya impiden una grilla o una
+ * duración absurdas, pero no su PRODUCTO: hoy 40×40×5000 pasa la validación
+ * campo a campo y es el peor caso alcanzable desde el formulario. Medido con
+ * GC forzado, el `LiveRunRegistry` retiene en esa corrida **339 MB** de
+ * snapshots serializados (lineal: ~42,4 MB por millón de unidades de carga,
+ * con 99 MB en 40×40×1500 y 199 MB en 40×40×3000, reproducido dos veces).
+ *
+ * Y el modo "Comparar dos corridas en vivo" lanza DOS corridas concurrentes:
+ * ~678 MB. El VPS tiene 2 GB compartidos con 8 sitios y midió 855 MB
+ * disponibles, así que ese caso entra en swap con el proceso del API
+ * compitiendo por los mismos 2 vCPU que mueven el motor.
+ *
+ * 3.000.000 deja 127 MB por corrida y 254 MB para las dos de comparación.
+ * Permite 40×40×1875 y 20×20×5000; bloquea 40×40×2000 y mayores. No se eligió
+ * un tope de memoria directo porque la carga es el único dato disponible
+ * ANTES de arrancar, y la relación con la memoria resultó lineal y estable.
+ */
+export const MAX_SIMULATION_LOAD = 3_000_000;
+
 /** RNF-008: valores fuera de rango podrían colgar el servidor (grillas o corridas enormes). */
 const LIMITS: readonly NumericLimit[] = [
   { field: "gridWidth", min: 2, max: 40 },
@@ -62,6 +85,29 @@ const LIMITS: readonly NumericLimit[] = [
   // socket abierto sin necesidad durante horas.
   { field: "msPerGeneration", min: 0, max: 5000 },
 ];
+
+/** Tope de un campo según `LIMITS` — una sola fuente de verdad, en vez de repetir el número. */
+function fieldMax(field: string): number {
+  const limit = LIMITS.find((l) => l.field === field);
+  if (!limit) throw new Error(`No hay límite declarado para ${field}`);
+  return limit.max;
+}
+
+/**
+ * Los tres topes que el cliente necesita para avisar ANTES de enviar el
+ * formulario, derivados de `LIMITS` y de `MAX_SIMULATION_LOAD`. Viajan en el
+ * cuerpo del 422 para que el mensaje de error pueda ser concreto.
+ */
+export const SIMULATION_LIMITS = {
+  maxCells: fieldMax("gridWidth") * fieldMax("gridHeight"),
+  maxGenerations: fieldMax("updates"),
+  maxLoad: MAX_SIMULATION_LOAD,
+} as const;
+
+/** Células × generaciones: el producto que `LIMITS` no puede acotar campo a campo. */
+export function simulationLoad(config: { gridWidth: number; gridHeight: number; updates: number }): number {
+  return config.gridWidth * config.gridHeight * config.updates;
+}
 
 const DEFAULTS = {
   gridWidth: 10,

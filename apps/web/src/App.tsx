@@ -39,6 +39,32 @@ function PlaybackControls({ run, initialSpeed, label }: { readonly run: RunHandl
   );
 }
 
+/**
+ * RNF-008: debe coincidir con MAX_SIMULATION_LOAD en
+ * apps/api/src/api/rest/config-request.ts, donde está el razonamiento y la
+ * medición (339 MB retenidos en el peor caso que los límites campo a campo
+ * permiten). Se duplica el literal, igual que con CLIMATE_VARIANCE_AMPLITUDE_MAX
+ * más abajo: `@camevo/shared-types` es solo-tipos y no puede exportar valores
+ * (su `exports` tiene únicamente la condición `types`, y un export de valor
+ * typechequea pero falla en runtime con ERR_PACKAGE_PATH_NOT_EXPORTED).
+ *
+ * El servidor es la autoridad: si este número quedara desactualizado hacia
+ * arriba, el formulario dejaría enviar y el servidor contestaría 422, que el
+ * formulario muestra igual. El costo de la desincronización es un aviso
+ * tardío, no una corrida que el servidor no pueda sostener.
+ */
+const MAX_SIMULATION_LOAD = 3_000_000;
+/** A partir de este porcentaje del tope, el aviso pasa de verde a naranja. */
+const LOAD_WARNING_RATIO = 0.7;
+
+type LoadLevel = "ok" | "near" | "over";
+
+function loadLevel(load: number): LoadLevel {
+  if (load > MAX_SIMULATION_LOAD) return "over";
+  if (load >= MAX_SIMULATION_LOAD * LOAD_WARNING_RATIO) return "near";
+  return "ok";
+}
+
 type Mode = "single" | "live-compare" | "saved-compare";
 
 function formatRunSummary(run: RunSummary): string {
@@ -206,6 +232,14 @@ export default function App() {
   const runB = useRun();
 
   const compareMode = mode === "live-compare";
+  /*
+   * RNF-008: valores derivados, no estado — se recalculan en cada render a
+   * partir de los mismos campos del formulario, así que no pueden quedar
+   * desincronizados de lo que el usuario está viendo.
+   */
+  const configCells = base.gridWidth * base.gridHeight;
+  const configLoad = configCells * base.updates;
+  const configLoadLevel = loadLevel(configLoad);
 
   // RF-025: comparación de dos corridas ya guardadas, en vez de dos en vivo.
   const [savedRuns, setSavedRuns] = useState<readonly RunSummary[]>([]);
@@ -615,7 +649,31 @@ export default function App() {
                   </>
                 )}
 
-                <button type="submit" disabled={running}>
+                {/*
+                  RNF-008: el aviso de carga va JUNTO al botón, no al lado de
+                  los inputs de grilla, porque la carga depende de tres campos
+                  (ancho, alto y generaciones) y ninguno de ellos es "el
+                  culpable" por sí solo. Acá además es lo último que el usuario
+                  lee antes de enviar.
+                */}
+                <p className={`load-indicator load-indicator-${configLoadLevel}`} role="status">
+                  {configCells.toLocaleString("es")} células × {base.updates.toLocaleString("es")} generaciones ={" "}
+                  <strong>carga {configLoad.toLocaleString("es")}</strong>
+                  {configLoadLevel === "over" && (
+                    <> — supera el máximo de {MAX_SIMULATION_LOAD.toLocaleString("es")} que sostiene el servidor.</>
+                  )}
+                  {configLoadLevel === "near" && <> — cerca del máximo de {MAX_SIMULATION_LOAD.toLocaleString("es")}.</>}
+                </p>
+
+                <button
+                  type="submit"
+                  disabled={running || configLoadLevel === "over"}
+                  title={
+                    configLoadLevel === "over"
+                      ? `La carga ${configLoad.toLocaleString("es")} supera el máximo de ${MAX_SIMULATION_LOAD.toLocaleString("es")}. Reducí el tamaño de la grilla o la cantidad de generaciones.`
+                      : undefined
+                  }
+                >
                   {running
                     ? "Corriendo…"
                     : compareMode
