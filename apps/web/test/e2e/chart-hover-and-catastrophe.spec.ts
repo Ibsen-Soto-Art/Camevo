@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { ensureFormOpen } from "./helpers";
 
 /**
  * Tercera ronda de re-auditoría de interfaz (post-producción):
@@ -81,6 +82,7 @@ test.describe("Mejora 1: activación táctil real en mobile", () => {
     page,
   }) => {
     await page.goto("/");
+    await ensureFormOpen(page);
     await page.getByLabel("Generaciones").fill("200");
     await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
     await page.getByRole("button", { name: "Iniciar corrida" }).click();

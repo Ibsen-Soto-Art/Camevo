@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ensureFormOpen } from "./helpers";
 
 /**
  * Pestañas de "Una corrida". Lo que solo se puede verificar en navegador
@@ -13,6 +14,7 @@ import { expect, test, type Page } from "@playwright/test";
  */
 async function finishedRun(page: Page) {
   await page.goto("/");
+  await ensureFormOpen(page);
   await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
   await page.getByLabel("Generaciones").fill("300");
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
@@ -154,6 +156,7 @@ test.describe("regresión: los modos de comparación no tienen pestañas", () =>
   test("comparar en vivo: dos paneles, cero pestañas", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("Modo").selectOption("live-compare");
+    await ensureFormOpen(page);
     await page.getByLabel("Ritmo de reproducción inicial (ms/generación)").fill("0");
     await page.getByLabel("Generaciones").fill("150");
     await page.getByRole("button", { name: "Iniciar ambas corridas" }).click();

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { ensureFormOpen } from "./helpers";
 
 /**
  * Grupo 2 (rediseño visual): verificación real en navegador de la
@@ -41,6 +42,7 @@ async function hasHorizontalOverflow(page: Page): Promise<boolean> {
 
 async function runShortSimulation(page: Page, generations = 8): Promise<void> {
   await page.goto("/");
+  await ensureFormOpen(page);
   await page.getByLabel("Generaciones").fill(String(generations));
   await page.getByRole("button", { name: "Iniciar corrida" }).click();
   await expect(page.locator(".status-line")).toContainText("finalizada", { timeout: 20_000 });
@@ -117,6 +119,7 @@ for (const viewport of VIEWPORTS) {
     test("modo 'live-compare': dos corridas en paralelo renderizan sin overflow horizontal", async ({ page }) => {
       await page.goto("/");
       await page.getByLabel("Modo").selectOption("live-compare");
+      await ensureFormOpen(page);
       await page.getByLabel("Generaciones").fill("8");
       await page.getByRole("button", { name: "Iniciar ambas corridas" }).click();
 
