@@ -6,6 +6,139 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.30.0] — Auditoría integral: límites de recursos, responsive y deuda técnica
+
+**Documentos afectados:** ninguno. Toda la auditoría se registra acá.
+
+### feat — Límite de carga del simulador
+- El servidor rechaza con **422** las corridas cuya carga (`width × height × updates`) supera
+  `MAX_SIMULATION_LOAD = 3.000.000`, **antes** de crear ningún registro en el `LiveRunRegistry`.
+  El cuerpo lleva `error`, `message` y los tres topes, y `SIMULATION_LIMITS` **deriva** `maxCells` y
+  `maxGenerations` de `LIMITS` en vez de repetir los números.
+- 422 y no 400 a propósito: la configuración está bien formada y cada campo es válido — lo que no
+  alcanza es la capacidad del servidor.
+- El formulario muestra en tiempo real "N células × M generaciones = carga K" con semáforo verde /
+  ámbar (≥70%) / rojo (>límite), deshabilita el botón al superar el tope con un `title` que dice
+  qué reducir, y el 422 llega al usuario **con su texto** en lugar del genérico
+  "No se pudo crear la corrida (HTTP 422)" de antes.
+- **Por qué hacía falta:** los límites por campo ya acotaban la grilla (2..40) y las generaciones
+  (1..5000), pero **no su producto**. Medido con GC forzado y reproducido dos veces: el peor caso
+  que la validación campo a campo permitía —40×40×5000— retiene **339 MB** de snapshots
+  serializados, lineal a ~42,4 MB por millón de carga (99 MB en 40×40×1500, 199 MB en 40×40×3000).
+  Y el modo comparación lanza **dos corridas concurrentes**: **~678 MB**, más el TTL de 15 minutos
+  que las retiene después de terminar, sobre un VPS de 2 GB compartido con 8 sitios que midió
+  855 MB disponibles. El tope elegido deja 127 MB por corrida y 254 MB para las dos.
+- La constante se duplica en el cliente porque `@camevo/shared-types` es solo-tipos y no puede
+  exportar valores (`ERR_PACKAGE_PATH_NOT_EXPORTED`, verificado). Mismo precedente que
+  `CLIMATE_VARIANCE_AMPLITUDE_MAX`, **incluido su test que lee la fuente del backend** para que la
+  desincronización se detecte automáticamente.
+
+### style — Fixes responsive (6 viewports: 375, 390, 768, 1024, 1280 y 1440px)
+- **Canvas de la grilla:** descontado el borde de 1px por lado en el `ResizeObserver`. `style.width`
+  es border-box, así que poner el ancho del contenedor dejaba el canvas **+2px exactos** más ancho
+  que su contenedor en los cuatro viewports con grilla visible (295 contra 293 a 375px, 688 contra
+  686 a 768px), con un scroller horizontal en `.run-tabpanels`. **No** se usó `box-sizing:
+  border-box`: eso dejaría el bitmap distinto del tamaño CSS del contenido y el navegador
+  resamplearía, perdiendo la nitidez que el escalado por `devicePixelRatio` existe para conservar.
+- **Objetivos táctiles de 44px** con `@media (pointer: coarse)`, no con un breakpoint de ancho: la
+  consulta describe el **dispositivo de entrada**, que es de lo que depende el problema. Medido:
+  18 controles por debajo de 44px en móvil y tablet → **0**. Los checkboxes pasan de **13×13px** a
+  un objetivo de **44×293px** (el `label` que los envuelve, verificado con un click a 150px del
+  borde: 12× el área original). Costo en escritorio: **+41px** de scroll, porque `pointer: fine` no
+  activa la regla — aplicarla a todos los viewports costaba **+250px** (1690 → 1940 medido) para
+  resolver algo que con mouse no existe.
+- **Formulario colapsado por defecto bajo 640px:** 2903px → **1651px** de alto a 375px, **−1252px**
+  (de 3,6 pantallas de scroll antes de poder empezar, a 2,0). Se lee una sola vez al montar y no
+  con un listener de `resize`: reabrirlo al rotar el teléfono sería un salto de layout que nadie
+  pidió.
+- **Texto interactivo a 14px en móvil:** `.run-form label`, `.mode-select label`, la etiqueta del
+  slider de generaciones y el aviso de carga. De 17 tamaños bajo 14px a **12**. Los captions y la
+  leyenda de la grilla se dejan en 12,48px a propósito: subirlos aplanaría una jerarquía deliberada
+  sin que nadie tenga que leerlos para operar la app.
+- **Celdas de la grilla cuadradas:** `cell = min(ancho/gridWidth, MAX/gridHeight)`. **Antes** el
+  canvas era siempre cuadrado y las celdas salían **rectangulares estiradas** — en una grilla 40×20
+  el alto de celda era el doble del ancho. Ahora las celdas son cuadradas y el canvas toma la forma
+  real de la grilla.
+- **Slider a ancho completo bajo los botones en móvil** (129 → **293px**), con `margin-inline: 0`
+  porque el margen por defecto del `input[type=range]` lo dejaba 2px más ancho que su contenedor.
+- **Pestañas con `overflow-x: auto`** y `flex-shrink: 0` como red de seguridad: medido, las dos
+  suman 182px de 293 disponibles, así que **hoy no se activa**.
+- **Resultado medido: 0 de 30 estados con desborde** (6 viewports × 5 estados), con 60 capturas
+  antes/después.
+
+### fix — Cleanup de `useRun` al desmontarse
+- `useEffect` con `return` que cierra el stream: sin esto, si el hook se desmonta con una corrida en
+  curso, el socket y su watchdog de heartbeat quedan vivos y el servidor sigue calculando
+  generaciones que nadie va a recibir. Es la contraparte en el cliente del `finally` de
+  `streamRunLive`.
+- Hoy **no es alcanzable** —los tres `useRun()` están en el cuerpo de `App` sin condición y `App`
+  nunca se desmonta— así que no cambia ningún comportamiento observable. Era el único `useEffect`
+  sin cleanup del frontend.
+
+### test
+- **API: 218 → 235** (+17: validador de carga y los 4 de integración del 422).
+- **Web unitarios: 186 → 203** (+17: indicador de carga y botón, manejo de errores del cliente,
+  cleanup de `useRun`).
+- **E2E: 72 → 85** (+13 en `responsive.spec.ts`: 4 invariantes × 3 viewports táctiles + 1 de
+  escritorio). Emulan `pointer: coarse` explícitamente — sin eso Chromium reporta `pointer: fine`
+  incluso a 375px y medirían por la razón equivocada (verificado: el `summary` mide 34px sin
+  emulación táctil y 52px con ella). **9 de 13 caen** al revertir los fixes.
+- `ensureFormOpen(page)` en `test/e2e/helpers.ts`, idempotente, cableado en 4 archivos y 9
+  call-sites: el formulario colapsado por defecto rompió **5 tests de móvil** que hacían `fill()`
+  sobre inputs ocultos. Es idempotente porque un `click()` a ciegas sobre el `<summary>` lo
+  **cerraría** en escritorio.
+
+### Auditoría funcional: sin fallas Críticas ni Altas
+Se recorrieron 7 flujos de punta a punta (ciclo completo con guardado y recarga, navegación del
+slider en corridas guardadas, comparación en vivo, límite de carga, catástrofe climática, carga de
+4 corridas guardadas y casos borde). **0 errores de consola, 0 unhandled rejections y 0 requests
+≥400.** Los cinco `fetch` del cliente tienen `catch` en su call-site. **22 controles, 0 sin nombre
+accesible, 0 inputs sin label.**
+
+Dos sospechas se probaron y **no se materializan**: la carrera de `start()`, que vacía `snapshots`
+antes del `await createRun()` mientras el callback del socket viejo apunta al mismo `setSnapshots`
+—medido con 40×40 y reinicio en el medio: 860 frames, 2 sockets, **0 frames tardíos**, porque el
+navegador deja de despachar `message` en cuanto `close()` pone el socket en CLOSING— y el estado
+colgado al cancelar una corrida en comparación, que **no es alcanzable**: no existe "cancelar".
+
+### Premisas corregidas por la medición
+- **La matriz de carga planificada no era ejecutable:** 50×50, 45×45, 60×60 y 80×20 se rechazan con
+  400 porque la grilla ya está validada 2..40. 4 de 5 combinaciones. El riesgo real estaba en
+  `updates`, que admite hasta 5000.
+- **`clamp()` no sirve para subir tipografía en pantallas chicas:** interpola hacia **arriba** con
+  el viewport, así que con el mínimo por encima del máximo devuelve siempre el mínimo y se pierde
+  la jerarquía en escritorio. Se usó el breakpoint de 640px **que ya existía**.
+- **El orden en la hoja de estilos decide:** las reglas puestas en el bloque de 640px de la línea 17
+  **no cambiaban ni un pixel**, pisadas por declaraciones posteriores de igual especificidad. Van
+  al final del archivo.
+- **`.mode-select label` nunca midió 11,5px en pantalla:** ese valor sale de leer el CSS
+  estáticamente y está pisado por una regla posterior de `0.85rem`. El valor **computado** era
+  **13,6px**.
+- **No hay `<header>` ni `<nav>`:** el `h1` mide 33px en móvil y 48px en escritorio, así que el tope
+  de 48px se cumple sin tocar nada.
+
+### Artefactos de instrumentación detectados y descartados
+Tres mediciones propias resultaron inválidas y se rehicieron:
+- Una captura `fullPage` aplica `Emulation.setDeviceMetricsOverride` y **apaga la emulación móvil
+  hasta la próxima navegación**: medir después de capturar daba `pointer: coarse` en `false` y un
+  scroller fantasma en los 30 estados. Medición y capturas pasaron a pasadas separadas.
+- `{"type":"connected"}` no es un frame fuera de contrato: lo manda el **WebSocket de HMR de Vite**,
+  y la palabra no existe en `apps/api/src`.
+- Un `| tail -4` al lanzar la suite dejó el exit code de `tail` —siempre 0— y truncó la lista de
+  fallas, así que 5 tests en **timeout** se vieron como "80 passed" sin error. El reporter JSON los
+  mostró de inmediato, test por test.
+
+### Deuda registrada
+- **Baja — mensaje de validación propio para grilla 1×1.** Hoy lo bloquea la validación nativa del
+  navegador (`min=2`), que muestra su propio globo. Diferido: para que la app vea el valor inválido
+  habría que poner `noValidate` en el formulario y reimplementar los rangos de los **6** campos
+  numéricos en JS — una tercera capa de validación, y un riesgo de regresión en todos los campos
+  para ganar un mensaje en castellano.
+- **Diferida — scroll vertical en comparación móvil:** 4974px a 375px, 6,1× el viewport. Reducirlo
+  exige decidir qué se oculta o se pliega, y eso es diseño de producto, no un fix de CSS.
+
+---
+
 ## [v0.29.0] — Backpressure en el WebSocket de corridas en vivo
 
 **Documentos afectados:** ninguno. La decisión queda registrada acá; `03-arquitectura.md` §5 ya
