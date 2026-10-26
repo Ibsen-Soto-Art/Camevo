@@ -6,6 +6,90 @@ Cada entrada indica qué documento(s) se vieron afectados, para poder rastrear l
 
 ---
 
+## [v0.31.0] — Máximo dinámico de generaciones según el tamaño de la grilla
+
+**Documentos afectados:** ninguno.
+
+### Changed
+- El input de generaciones expone `max = min(3.000.000 / celdas, 5000)` y lo **recalcula con cada
+  cambio de grilla**: 40×40 da **1875**, 25×25 da **4800**, y por debajo de 625 celdas manda el tope
+  absoluto de 5000. Antes el campo aceptaba cualquier número hasta 5000 y el problema recién se
+  informaba después, con el botón bloqueado.
+- **Ampliar la grilla clampea el valor en silencio** (de 20×20 con 5000 generaciones a 40×40 deja
+  1875). **Reducirla sube el máximo pero no toca el valor**: no hay clampeo hacia arriba.
+- El tope absoluto de 5000 **manda sobre la fórmula**. Sin ese `min`, una grilla 10×10 ofrecería
+  30.000 generaciones y el servidor las rechazaría con 400, porque `LIMITS` valida `updates ≤ 5000`
+  — peor que el problema que el máximo dinámico viene a resolver. Recién desde 25×25 la carga pasa
+  a ser el límite activo.
+- **Sin cambios en el servidor.** El guardia 422 de v0.30.0 sigue como red de seguridad para
+  cualquier request que no venga del formulario.
+
+### El indicador de v0.30.0, simplificado a un elemento y dos estados
+- **Informa el máximo, no la carga.** Pasa de `1600 células × 1500 generaciones = carga 2.400.000`
+  a `1600 células · máx. 1875 generaciones con esta grilla`. "Carga 2.400.000" era una magnitud
+  abstracta, sin unidad ni referencia, que existía solo porque el límite era invisible; con el
+  máximo expuesto en el input, lo accionable —cuántas generaciones se pueden pedir— reemplaza a una
+  cifra que el usuario no puede interpretar.
+- **Se retira el tramo de aviso al 70%.** Su razón era avisar "te estás acercando a un límite que
+  podés cruzar sin darte cuenta". Con el máximo visible, estar cerca del máximo pasó a ser un
+  estado legítimo, y avisar sobre algo legítimo enseña a ignorar los avisos.
+- **Se conserva el estado de error y el bloqueo del botón** — ver la premisa corregida abajo.
+- Queda **un** elemento donde iban a quedar dos diciendo lo mismo (el aviso de carga y un texto
+  nuevo con el máximo).
+
+### Premisa corregida por la medición
+El plan asumía que, con un máximo dinámico, el estado rojo del indicador dejaría de ser alcanzable
+y por lo tanto el indicador podía eliminarse. **Medido, no es así: el atributo `max` de un input
+numérico no impide tipear un valor mayor.**
+
+| intento con `max=5000` | resultado |
+| --- | --- |
+| `fill("9999")` | queda **9999** |
+| tipeo carácter por carácter "8888" | queda **8888** |
+| flechas del spinner desde 4999 | se detiene en **5000** |
+
+El input queda con `checkValidity() === false` y el mensaje nativo del navegador, pero el valor
+inválido entra. Por eso el indicador conserva su estado de error y el botón su bloqueo: son lo que
+explica el problema **antes** de que el usuario intente enviar, y detrás sigue el 422.
+
+### Decisiones de diseño registradas
+- **El clampeo ocurre solo al cambiar la grilla, nunca al tipear en el campo de generaciones.**
+  Clampear mientras alguien escribe destruye el valor a mitad de camino: con máximo 187, tipear
+  "500" dejaría 187 antes de poder terminar. Al ampliar la grilla el usuario no está tocando ese
+  campo, así que el ajuste es silencioso y esperado.
+- **La lógica vive en `lib/simulation-load.ts`, no en `App.tsx`.** Exportar algo que no es un
+  componente desde un archivo de componentes rompe Fast Refresh y `oxlint` lo marca (subió de 7 a 8
+  warnings al ponerlo ahí). Además es lógica pura, así que el test unitario la ejercita sin
+  renderizar `App`. `MAX_SIMULATION_LOAD` se mudó con ella, y el test que lee la fuente del backend
+  para detectar la desincronización apunta ahora a ese archivo.
+
+### Tests
+- **Web unitarios: 203 → 214** (+11). Cubren la fórmula para 7 combinaciones de grilla, que el tope
+  absoluto mande por debajo de 625 celdas, que 40×20 y 20×40 den lo mismo, que **ninguna**
+  combinación permita una carga por encima del tope del servidor, el `max` del input al cargar y al
+  cambiar cada dimensión, el clampeo al ampliar y su ausencia al reducir, que tipear no clampee, y
+  los dos estados del aviso con el borde exacto incluido.
+- **E2E: 85 → 92** (+7 en `generations-max.spec.ts`).
+- **El tercer test e2e planificado se reformuló.** Decía "si el usuario intenta tipear un número
+  mayor al máximo, el input lo rechaza o lo clampea": medido, **ni lo rechaza ni lo clampea**. El
+  test fija el comportamiento real — el valor entra, la validación nativa falla, el aviso se pone
+  rojo y el botón se bloquea — en vez de un comportamiento que el input no tiene.
+- **Discriminación verificada:** al desactivar el máximo dinámico y el clampeo caen **5 de 7 e2e y
+  3 unitarios**.
+- Los 92 e2e verificados **test por test con el reporter JSON**: `expected: 92`, exit 0, cero
+  `skipped` o `timedOut`.
+
+### Hallazgos colaterales
+- **`npm run build` atrapó un `TS6133`** (variable sin usar en el spec nuevo) que un
+  `tsc --noEmit -p apps/web` no habría visto, porque ese tsconfig es solo de referencias y no
+  alcanza `test/`. Es la misma trampa que rompió un deploy antes en este proyecto: el build real es
+  la única verificación válida.
+- **`Intl` en español no agrupa números de 4 dígitos** (`minimumGroupingDigits: 2` en CLDR): 1875 se
+  muestra sin separador y 120.000 con punto. Las primeras expectativas de los tests decían "1.875"
+  y estaban mal — el código ya hacía lo correcto.
+
+---
+
 ## [v0.30.0] — Auditoría integral: límites de recursos, responsive y deuda técnica
 
 **Documentos afectados:** ninguno. Toda la auditoría se registra acá.
