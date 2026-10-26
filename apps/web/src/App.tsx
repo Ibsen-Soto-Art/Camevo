@@ -5,6 +5,7 @@ import { useHistoricalRun } from "./hooks/useHistoricalRun";
 import { useRun, type RunHandle } from "./hooks/useRun";
 import { listRuns, type ClimateChangeSpeed, type ClimateTrendSource, type RunFormValues, type RunSummary } from "./lib/camevo-client";
 import { effectiveLineageCount } from "./lib/lineage";
+import { maxGenerationsFor } from "./lib/simulation-load";
 
 /**
  * RF-023: pausar/reanudar y ajustar el ritmo de una corrida ya en curso —
@@ -37,32 +38,6 @@ function PlaybackControls({ run, initialSpeed, label }: { readonly run: RunHandl
       </label>
     </div>
   );
-}
-
-/**
- * RNF-008: debe coincidir con MAX_SIMULATION_LOAD en
- * apps/api/src/api/rest/config-request.ts, donde está el razonamiento y la
- * medición (339 MB retenidos en el peor caso que los límites campo a campo
- * permiten). Se duplica el literal, igual que con CLIMATE_VARIANCE_AMPLITUDE_MAX
- * más abajo: `@camevo/shared-types` es solo-tipos y no puede exportar valores
- * (su `exports` tiene únicamente la condición `types`, y un export de valor
- * typechequea pero falla en runtime con ERR_PACKAGE_PATH_NOT_EXPORTED).
- *
- * El servidor es la autoridad: si este número quedara desactualizado hacia
- * arriba, el formulario dejaría enviar y el servidor contestaría 422, que el
- * formulario muestra igual. El costo de la desincronización es un aviso
- * tardío, no una corrida que el servidor no pueda sostener.
- */
-const MAX_SIMULATION_LOAD = 3_000_000;
-/** A partir de este porcentaje del tope, el aviso pasa de verde a naranja. */
-const LOAD_WARNING_RATIO = 0.7;
-
-type LoadLevel = "ok" | "near" | "over";
-
-function loadLevel(load: number): LoadLevel {
-  if (load > MAX_SIMULATION_LOAD) return "over";
-  if (load >= MAX_SIMULATION_LOAD * LOAD_WARNING_RATIO) return "near";
-  return "ok";
 }
 
 type Mode = "single" | "live-compare" | "saved-compare";
@@ -238,8 +213,28 @@ export default function App() {
    * desincronizados de lo que el usuario está viendo.
    */
   const configCells = base.gridWidth * base.gridHeight;
-  const configLoad = configCells * base.updates;
-  const configLoadLevel = loadLevel(configLoad);
+  const configMaxGenerations = maxGenerationsFor(base.gridWidth, base.gridHeight);
+  /*
+   * El rojo SIGUE siendo alcanzable con el máximo dinámico puesto: medido, el
+   * atributo `max` de un input numérico frena las flechas del spinner y hace
+   * fallar la validación nativa, pero NO impide tipear un valor mayor
+   * (`fill("9999")` con max=5000 deja 9999). Por eso el indicador conserva su
+   * estado de error y el botón su bloqueo, con el 422 del servidor detrás.
+   */
+  const configOverMax = base.updates > configMaxGenerations;
+
+  /*
+   * Al ampliar la grilla, el máximo baja y el valor actual puede quedar por
+   * encima: se ajusta en silencio, que es lo esperado. Solo al cambiar la
+   * GRILLA, nunca al tipear en el campo de generaciones — clampear mientras
+   * alguien escribe destruye el valor a mitad de camino (tipear "500" con
+   * máximo 187 deja 187 antes de poder terminar).
+   */
+  const setGridDimension = (dim: "gridWidth" | "gridHeight", value: number) => {
+    const next = { ...base, [dim]: value };
+    const max = maxGenerationsFor(next.gridWidth, next.gridHeight);
+    setBase({ ...next, updates: Math.min(next.updates, max) });
+  };
 
   // RF-025: comparación de dos corridas ya guardadas, en vez de dos en vivo.
   const [savedRuns, setSavedRuns] = useState<readonly RunSummary[]>([]);
@@ -469,7 +464,7 @@ export default function App() {
                     min={2}
                     max={40}
                     value={base.gridWidth}
-                    onChange={(e) => setBase({ ...base, gridWidth: Number(e.target.value) })}
+                    onChange={(e) => setGridDimension("gridWidth", Number(e.target.value))}
                   />
                 </label>
                 <label>
@@ -479,7 +474,7 @@ export default function App() {
                     min={2}
                     max={40}
                     value={base.gridHeight}
-                    onChange={(e) => setBase({ ...base, gridHeight: Number(e.target.value) })}
+                    onChange={(e) => setGridDimension("gridHeight", Number(e.target.value))}
                   />
                 </label>
                 <label>
@@ -498,7 +493,8 @@ export default function App() {
                   <input
                     type="number"
                     min={1}
-                    max={5000}
+                    /* Se recalcula con cada cambio de grilla: ver maxGenerationsFor. */
+                    max={configMaxGenerations}
                     value={base.updates}
                     onChange={(e) => setBase({ ...base, updates: Number(e.target.value) })}
                   />
@@ -666,27 +662,34 @@ export default function App() {
                 )}
 
                 {/*
-                  RNF-008: el aviso de carga va JUNTO al botón, no al lado de
-                  los inputs de grilla, porque la carga depende de tres campos
-                  (ancho, alto y generaciones) y ninguno de ellos es "el
-                  culpable" por sí solo. Acá además es lo último que el usuario
-                  lee antes de enviar.
+                  RNF-008: va JUNTO al botón y no al lado de los inputs de
+                  grilla, porque el máximo depende de dos campos (ancho y alto)
+                  y ninguno es "el culpable" por sí solo. Acá además es lo
+                  último que el usuario lee antes de enviar.
+
+                  Dice el MÁXIMO y no la carga: "carga 2.400.000" es una
+                  magnitud abstracta, sin unidad ni referencia, que existía
+                  solo porque el límite era invisible. Con el máximo expuesto
+                  en el input, lo accionable —cuántas generaciones puede
+                  pedir— reemplaza a la cifra que nadie puede interpretar.
+
+                  Dos estados y no tres: el tramo de aviso al 70% desapareció
+                  con el máximo visible. Estar cerca del máximo pasó a ser un
+                  estado legítimo, y avisar sobre algo legítimo enseña a
+                  ignorar los avisos.
                 */}
-                <p className={`load-indicator load-indicator-${configLoadLevel}`} role="status">
-                  {configCells.toLocaleString("es")} células × {base.updates.toLocaleString("es")} generaciones ={" "}
-                  <strong>carga {configLoad.toLocaleString("es")}</strong>
-                  {configLoadLevel === "over" && (
-                    <> — supera el máximo de {MAX_SIMULATION_LOAD.toLocaleString("es")} que sostiene el servidor.</>
-                  )}
-                  {configLoadLevel === "near" && <> — cerca del máximo de {MAX_SIMULATION_LOAD.toLocaleString("es")}.</>}
+                <p className={configOverMax ? "load-indicator load-indicator-over" : "load-indicator"} role="status">
+                  {configCells.toLocaleString("es")} células · máx.{" "}
+                  <strong>{configMaxGenerations.toLocaleString("es")} generaciones</strong> con esta grilla
+                  {configOverMax && <> — {base.updates.toLocaleString("es")} es más de lo que el servidor sostiene.</>}
                 </p>
 
                 <button
                   type="submit"
-                  disabled={running || configLoadLevel === "over"}
+                  disabled={running || configOverMax}
                   title={
-                    configLoadLevel === "over"
-                      ? `La carga ${configLoad.toLocaleString("es")} supera el máximo de ${MAX_SIMULATION_LOAD.toLocaleString("es")}. Reducí el tamaño de la grilla o la cantidad de generaciones.`
+                    configOverMax
+                      ? `Con una grilla de ${configCells.toLocaleString("es")} células el máximo es ${configMaxGenerations.toLocaleString("es")} generaciones. Reducí el tamaño de la grilla o la cantidad de generaciones.`
                       : undefined
                   }
                 >

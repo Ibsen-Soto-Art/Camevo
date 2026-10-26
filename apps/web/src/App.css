@@ -176,12 +176,6 @@
   color: var(--color-text-secondary);
 }
 
-/* Mismo ámbar que el overlay de catástrofe y el indicador de generación: en
-   toda la interfaz significa "esto merece atención", no "esto es un error". */
-.load-indicator-near {
-  color: #f59e0b;
-}
-
 .load-indicator-over {
   color: var(--color-error);
 }
